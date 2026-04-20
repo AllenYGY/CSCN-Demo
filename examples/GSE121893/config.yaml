@@ -1,0 +1,43 @@
+run_name: gse121893_generic
+
+input:
+  format: tables
+  expr_path: ../../data/GSE121893/GSE121893_human_heart_sc_umi.csv.gz
+  metadata_path: ../../data/GSE121893/GSE121893_covariates.csv.gz
+  expr_orientation: genes_by_cells
+  metadata_cell_id_column: cell_id
+  obs_group_key: disease
+
+preprocess:
+  normalize: true
+  log1p: true
+  sample_per_group: 500
+  random_seed: 42
+  gene_selection:
+    top_n: 150
+
+run:
+  output_dir: ../../runs
+  groups: ["N", "dHF"]
+  max_workers: 8
+  sigmoid_score: 0.1
+  significance_level: 0.05
+  max_cond_vars: 20
+  use_bitmap: true
+
+aggregate:
+  consensus: true
+  consensus_threshold_mode: auto
+
+biomarker:
+  enabled: true
+  case_group: dHF
+  control_group: N
+  outcome_column: DISEASE
+  confounder_method: classic
+
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  reload: false

@@ -1,0 +1,43 @@
+run_name: gse138852_generic
+
+input:
+  format: tables
+  expr_path: ../../data/GSE138852/GSE138852_counts.csv.gz
+  metadata_path: ../../data/GSE138852/GSE138852_covariates.csv.gz
+  expr_orientation: genes_by_cells
+  metadata_cell_id_column: ""
+  obs_group_key: oupSample.batchCond
+
+preprocess:
+  normalize: true
+  log1p: true
+  sample_per_group: 3000
+  random_seed: 42
+  gene_selection:
+    top_n: 150
+
+run:
+  output_dir: ../../runs
+  groups: ["ct", "AD"]
+  max_workers: 8
+  sigmoid_score: 0.1
+  significance_level: 0.01
+  max_cond_vars: 20
+  use_bitmap: true
+
+aggregate:
+  consensus: true
+  consensus_threshold_mode: auto
+
+biomarker:
+  enabled: true
+  case_group: AD
+  control_group: ct
+  outcome_column: DISEASE
+  confounder_method: classic
+
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  reload: false
