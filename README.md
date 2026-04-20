@@ -122,5 +122,6 @@ runs/<run_name>/
 
 - [Installation](docs/installation.md)
 - [Configuration](docs/configuration.md)
+- [Design And Development](docs/design_and_development.md)
 - [DAG Viewer](docs/dag_viewer.md)
 - [Examples](examples/README.md)

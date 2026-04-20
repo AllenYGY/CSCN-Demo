@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
-  {name = "Allen Y. G. Yang"}
+  {name = "Menghan WANG, Junya Yang, Luyao Lyu"}
 ]
 dependencies = [
   "numpy>=1.24,<3.0",

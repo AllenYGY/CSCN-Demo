@@ -40,3 +40,4 @@ runs/
 # Local Codex metadata
 .codex/*
 legacy/*
+docs/others/*
