@@ -13,9 +13,11 @@
 ## 获取代码
 
 ```bash
-git clone <your-repo-url>
-cd CSCN
+git clone git@github.com:AllenYGY/CSCN-Demo.git
+cd CSCN-Demo
 ```
+
+如果你是通过其他 URL 克隆，进入你本地实际的仓库目录即可。
 
 ## 推荐安装方式
 

@@ -2,6 +2,12 @@
 
 `CSCN` 现在以“通用 scRNA CSCN 仓库”为主，而不是只围绕特定 biomarker 数据集脚本组织。
 
+当前命名约定：
+
+- GitHub 仓库名：`CSCN-Demo`
+- Python 包名：`cscn`
+- CLI 名：`cscn`
+
 当前正式入口是：
 
 - Python 包：`src/cscn/`
