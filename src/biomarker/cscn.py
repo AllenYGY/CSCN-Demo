@@ -159,7 +159,8 @@ class CSCN:
             bit_count = self.get_bits_counts(genes, key_cell_idx, sigmoid_score)
             if kdt_count != bit_count:
                 print(
-                    f"kdt and bitset not equal: kdt{kdt_count} != bits{bit_count}, {genes}"
+                    f"kdt and bitset not equal: kdt{kdt_count} != bits{bit_count}, {genes}",
+                    flush=True,
                 )
             if self.use_bitmap:
                 return bit_count
@@ -241,7 +242,7 @@ class CSCN:
             return p_value > significance_level
 
         except Exception as e:
-            print(f"ICT ERROR: {str(e)}")
+            print(f"ICT ERROR: {str(e)}", flush=True)
             return True
 
     def run_pc(self, key_cell_idx):
@@ -294,7 +295,8 @@ class CSCN:
                     label = f"{progress_label}: " if progress_label else ""
                     print(
                         f"[CSCN] {label}saved DAG {completed}/{total} -> "
-                        f"{os.path.basename(filename)}"
+                        f"{os.path.basename(filename)}",
+                        flush=True,
                     )
         return results
 

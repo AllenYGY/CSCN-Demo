@@ -33,12 +33,12 @@ DEFAULT_USE_BITMAP = True
 
 
 def log(message):
-    print(f"[{DATA_SET}] {message}")
+    print(f"[{DATA_SET}] {message}", flush=True)
 
 
 def log_stage(title):
-    print()
-    print(f"=== {title} ===")
+    print(flush=True)
+    print(f"=== {title} ===", flush=True)
 
 
 def validate_required_file(path: Path, description: str):
@@ -325,7 +325,7 @@ def main():
     log(f"biomarker count: {len(biomarkers_df)}")
     if not biomarkers_df.empty:
         log("top 5 biomarkers:")
-        print(biomarkers_df.head(5).to_string(index=False))
+        print(biomarkers_df.head(5).to_string(index=False), flush=True)
 
 
 if __name__ == "__main__":
