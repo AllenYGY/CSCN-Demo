@@ -64,7 +64,7 @@ def parse_args():
         default=REPO_ROOT / "data" / DATA_SET,
         help=(
             "Dataset directory that contains GSE131907_Lung_Cancer_cell_annotation.txt.gz "
-            "and GSE131907_Lung_Cancer_raw_UMI_matrix.txt.gz."
+            "and GSE131907_Lung_Cancer_normalized_log2TPM_matrix.txt.gz."
         ),
     )
     parser.add_argument(
@@ -172,7 +172,6 @@ def main():
         build_expression_df,
         load_gene_names,
         load_gse131907_grouped_cells,
-        normalize_log1p,
         read_expression_for_sampled_cells,
         sample_cells_by_group,
         save_prepared_inputs,
@@ -181,7 +180,7 @@ def main():
     data_dir = args.data_dir.resolve()
     output_dir = data_dir / "output_deseq"
     annotation_path = data_dir / "GSE131907_Lung_Cancer_cell_annotation.txt.gz"
-    counts_path = data_dir / "GSE131907_Lung_Cancer_raw_UMI_matrix.txt.gz"
+    expression_matrix_path = data_dir / "GSE131907_Lung_Cancer_normalized_log2TPM_matrix.txt.gz"
     gene_list_path = (
         args.gene_list_path.resolve()
         if args.gene_list_path is not None
@@ -200,7 +199,7 @@ def main():
     log(f"prepare only: {args.prepare_only}")
     log(f"gene limit: {args.gene_limit}")
     validate_required_file(annotation_path, "cell annotation")
-    validate_required_file(counts_path, "raw UMI matrix")
+    validate_required_file(expression_matrix_path, "normalized log2TPM matrix")
     validate_required_file(gene_list_path, "top-gene list")
 
     log_stage("Load Inputs")
@@ -232,21 +231,20 @@ def main():
         log(f"first 3 sampled {group} cells: {cell_ids[:3]}")
 
     log_stage("Extract Expression")
-    log("reading selected genes from raw UMI matrix; this can take a while")
-    raw_matrices, used_genes = read_expression_for_sampled_cells(
-        counts_path=counts_path,
+    log("reading selected genes from normalized log2TPM matrix; this can take a while")
+    matrices, used_genes = read_expression_for_sampled_cells(
+        counts_path=expression_matrix_path,
         sampled_cells=sampled_cells,
         top_genes=top_genes,
         delimiter="\t",
     )
-    for group, matrix in raw_matrices.items():
+    for group, matrix in matrices.items():
         log(
-            f"raw {group} matrix shape: {matrix.shape}, "
+            f"normalized log2TPM {group} matrix shape: {matrix.shape}, "
             f"min={matrix.min():.3f}, max={matrix.max():.3f}"
         )
 
-    log_stage("Normalize And Save")
-    matrices = {group: normalize_log1p(matrix) for group, matrix in raw_matrices.items()}
+    log_stage("Save Prepared Inputs")
     save_prepared_inputs(
         output_dir=output_dir,
         dataset_name=run_name,
@@ -258,7 +256,7 @@ def main():
 
     for group, matrix in matrices.items():
         log(
-            f"normalized {group} matrix shape: {matrix.shape}, "
+            f"saved {group} matrix shape: {matrix.shape}, "
             f"dtype={matrix.dtype}, min={matrix.min():.3f}, max={matrix.max():.3f}"
         )
         log(f"saved matrix: {output_dir / f'{run_name}_{group}.npy'}")
