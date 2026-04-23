@@ -1,5 +1,6 @@
 import csv
 import gzip
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -99,6 +100,44 @@ def load_gse138852_eligible_cells(covariates_path, group_to_label, excluded_cell
     return cells_by_group
 
 
+def load_gse131907_grouped_cells(annotation_path, group_filters):
+    annotation_df = pd.read_csv(annotation_path, sep="\t")
+    required_columns = {"Index", "Sample_Origin", "Cell_type", "Cell_subtype"}
+    missing_columns = required_columns - set(annotation_df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Missing required annotation columns in {annotation_path}: {sorted(missing_columns)}"
+        )
+
+    cells_by_group = {}
+    summary_by_group = {}
+    for group, filters in group_filters.items():
+        mask = pd.Series(True, index=annotation_df.index)
+
+        sample_origins = filters.get("sample_origins")
+        if sample_origins:
+            mask &= annotation_df["Sample_Origin"].isin(sample_origins)
+
+        cell_types = filters.get("cell_types")
+        if cell_types:
+            mask &= annotation_df["Cell_type"].isin(cell_types)
+
+        cell_subtypes = filters.get("cell_subtypes")
+        if cell_subtypes:
+            mask &= annotation_df["Cell_subtype"].isin(cell_subtypes)
+
+        selected_df = annotation_df.loc[mask].copy()
+        cells_by_group[group] = selected_df["Index"].astype(str).tolist()
+        summary_by_group[group] = {
+            "total_cells": int(selected_df.shape[0]),
+            "sample_origin_counts": selected_df["Sample_Origin"].value_counts().to_dict(),
+            "cell_type_counts": selected_df["Cell_type"].value_counts().to_dict(),
+            "cell_subtype_counts": selected_df["Cell_subtype"].value_counts().to_dict(),
+        }
+
+    return cells_by_group, summary_by_group
+
+
 def sample_cells_by_group(cells_by_group, sample_size, random_seed):
     rng = np.random.default_rng(random_seed)
     sampled_cells = {}
@@ -156,13 +195,26 @@ def load_gse121893_eligible_cells(
     return cells_by_group
 
 
-def read_expression_for_sampled_cells(counts_path, sampled_cells, top_genes):
+def read_expression_for_sampled_cells(
+    counts_path,
+    sampled_cells,
+    top_genes,
+    delimiter=",",
+):
+    max_csv_field_size = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(max_csv_field_size)
+            break
+        except OverflowError:
+            max_csv_field_size //= 10
+
     group_positions = {}
     gene_to_group_values = {group: {} for group in sampled_cells}
     gene_set = set(top_genes)
 
     with gzip.open(counts_path, "rt", newline="") as handle:
-        reader = csv.reader(handle)
+        reader = csv.reader(handle, delimiter=delimiter)
         header = next(reader)
         cell_to_position = {cell_id: idx for idx, cell_id in enumerate(header[1:])}
 
