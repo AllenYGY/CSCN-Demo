@@ -56,12 +56,21 @@ def _infer_run_name(config_path: Path, raw: dict[str, Any]) -> str:
     return run_name.strip()
 
 
+def _get_optional_float(mapping: dict[str, Any], key: str) -> float | None:
+    if key not in mapping or mapping.get(key) in (None, ""):
+        return None
+    return float(mapping[key])
+
+
 @dataclass(frozen=True)
 class InputConfig:
     format: str
     path: Path | None = None
     expr_path: Path | None = None
     metadata_path: Path | None = None
+    spatial_x_key: str | None = None
+    spatial_y_key: str | None = None
+    spatial_z_key: str | None = None
     layer: str | None = None
     gene_key: str | None = None
     obs_group_key: str | None = None
@@ -101,6 +110,19 @@ class RunConfig:
     using_nmf: bool = False
     show_progress: bool = False
     progress_interval: int = 100
+    spatial: "SpatialConfig" = field(default_factory=lambda: SpatialConfig())
+
+
+@dataclass(frozen=True)
+class SpatialConfig:
+    enabled: bool = False
+    mode: str = "knn"
+    k: int = 8
+    radius: float | None = None
+    kernel: str = "gaussian"
+    bandwidth: float | None = None
+    lambda_expr: float = 0.2
+    min_effective_neighbors: int = 15
 
 
 @dataclass(frozen=True)
@@ -161,6 +183,9 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         path=_resolve_path(base_dir, input_raw.get("path")),
         expr_path=_resolve_path(base_dir, input_raw.get("expr_path")),
         metadata_path=_resolve_path(base_dir, input_raw.get("metadata_path")),
+        spatial_x_key=_get_string(input_raw, "spatial_x_key"),
+        spatial_y_key=_get_string(input_raw, "spatial_y_key"),
+        spatial_z_key=_get_string(input_raw, "spatial_z_key"),
         layer=input_raw.get("layer"),
         gene_key=input_raw.get("gene_key"),
         obs_group_key=input_raw.get("obs_group_key"),
@@ -188,6 +213,8 @@ def load_config(config_path: str | Path) -> CSCNConfig:
             raise ConfigError(
                 "`input.expr_orientation` must be `cells_by_genes` or `genes_by_cells`."
             )
+    if bool(input_config.spatial_x_key) != bool(input_config.spatial_y_key):
+        raise ConfigError("`input.spatial_x_key` and `input.spatial_y_key` must be set together.")
 
     preprocess_raw = raw.get("preprocess") or {}
     if not isinstance(preprocess_raw, dict):
@@ -219,6 +246,9 @@ def load_config(config_path: str | Path) -> CSCNConfig:
     run_raw = raw.get("run") or {}
     if not isinstance(run_raw, dict):
         raise ConfigError("`run` must be a mapping.")
+    spatial_raw = run_raw.get("spatial") or {}
+    if not isinstance(spatial_raw, dict):
+        raise ConfigError("`run.spatial` must be a mapping.")
     output_dir = _resolve_path(base_dir, run_raw.get("output_dir") or "runs")
     assert output_dir is not None
     run = RunConfig(
@@ -234,7 +264,31 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         using_nmf=bool(run_raw.get("using_nmf", False)),
         show_progress=bool(run_raw.get("show_progress", False)),
         progress_interval=int(run_raw.get("progress_interval") or 100),
+        spatial=SpatialConfig(
+            enabled=bool(spatial_raw.get("enabled", False)),
+            mode=str(spatial_raw.get("mode") or "knn").strip().lower(),
+            k=int(spatial_raw.get("k", 8)),
+            radius=_get_optional_float(spatial_raw, "radius"),
+            kernel=str(spatial_raw.get("kernel") or "gaussian").strip().lower(),
+            bandwidth=_get_optional_float(spatial_raw, "bandwidth"),
+            lambda_expr=float(spatial_raw.get("lambda_expr", 0.2)),
+            min_effective_neighbors=int(spatial_raw.get("min_effective_neighbors", 15)),
+        ),
     )
+    if run.spatial.mode not in {"knn", "radius"}:
+        raise ConfigError("`run.spatial.mode` must be `knn` or `radius`.")
+    if run.spatial.kernel not in {"binary", "gaussian"}:
+        raise ConfigError("`run.spatial.kernel` must be `binary` or `gaussian`.")
+    if run.spatial.k <= 0:
+        raise ConfigError("`run.spatial.k` must be positive.")
+    if not 0 <= run.spatial.lambda_expr <= 1:
+        raise ConfigError("`run.spatial.lambda_expr` must be between 0 and 1.")
+    if run.spatial.min_effective_neighbors <= 0:
+        raise ConfigError("`run.spatial.min_effective_neighbors` must be positive.")
+    if run.spatial.enabled and run.spatial.mode == "radius" and (
+        run.spatial.radius is None or run.spatial.radius <= 0
+    ):
+        raise ConfigError("`run.spatial.radius` must be positive when spatial radius mode is enabled.")
 
     aggregate_raw = raw.get("aggregate") or {}
     if not isinstance(aggregate_raw, dict):

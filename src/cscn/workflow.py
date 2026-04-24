@@ -62,6 +62,21 @@ def _write_prepare_outputs(layout: RunLayout, prepared: PreparedRunData) -> RunS
             ["cell_id"],
             [{"cell_id": cell_id} for cell_id in group_data.cell_ids],
         )
+        if group_data.spatial_coords is not None:
+            coord_columns = ["spatial_x", "spatial_y"]
+            if group_data.spatial_coords.shape[1] == 3:
+                coord_columns.append("spatial_z")
+            spatial_rows = []
+            for idx, cell_id in enumerate(group_data.cell_ids):
+                row = {"cell_id": cell_id}
+                for col_idx, col_name in enumerate(coord_columns):
+                    row[col_name] = float(group_data.spatial_coords[idx, col_idx])
+                spatial_rows.append(row)
+            _write_csv(
+                layout.spatial_coords_path(group_key),
+                ["cell_id", *coord_columns],
+                spatial_rows,
+            )
         group_rows.append(
             {
                 "group_key": group_key,
@@ -114,10 +129,21 @@ def load_prepared_run(layout: RunLayout) -> PreparedRunData:
         matrix = np.load(layout.matrix_path(group_key)).astype(np.float32)
         cells_frame = pd.read_csv(layout.group_cells_path(group_key))
         cell_ids = cells_frame["cell_id"].astype(str).tolist()
+        spatial_coords = None
+        spatial_path = layout.spatial_coords_path(group_key)
+        if spatial_path.is_file():
+            spatial_frame = pd.read_csv(spatial_path)
+            expected = ["cell_id", *[f"spatial_{axis}" for axis in ("x", "y", "z") if f"spatial_{axis}" in spatial_frame.columns]]
+            spatial_frame = spatial_frame[expected]
+            spatial_frame["cell_id"] = spatial_frame["cell_id"].astype(str)
+            if spatial_frame["cell_id"].tolist() != cell_ids:
+                raise ValueError(f"Spatial coordinate order does not match cell order for group {group_key}.")
+            spatial_coords = spatial_frame.drop(columns=["cell_id"]).to_numpy(dtype=np.float32, copy=True)
         groups[group_key] = PreparedGroupData(
             group_key=group_key,
             cell_ids=cell_ids,
             matrix=matrix,
+            spatial_coords=spatial_coords,
         )
     sampled_metadata = pd.read_csv(layout.cell_metadata_path)
     return PreparedRunData(
@@ -145,11 +171,23 @@ def run_cscn(config: CSCNConfig) -> RunSummary:
             use_bitmap=config.run.use_bitmap,
             show_progress=config.run.show_progress,
             progress_interval=config.run.progress_interval,
+            spatial_enabled=config.run.spatial.enabled,
+            spatial_mode=config.run.spatial.mode,
+            spatial_k=config.run.spatial.k,
+            spatial_radius=config.run.spatial.radius,
+            spatial_kernel=config.run.spatial.kernel,
+            spatial_bandwidth=config.run.spatial.bandwidth,
+            spatial_lambda_expr=config.run.spatial.lambda_expr,
+            spatial_min_effective_neighbors=config.run.spatial.min_effective_neighbors,
         )
         _log(
             f"running CSCN for group={group_key} cells={len(group_data.cell_ids)} genes={group_data.matrix.shape[1]}"
         )
-        cscn.run_core(group_data.matrix, usingNMF=config.run.using_nmf)
+        cscn.run_core(
+            group_data.matrix,
+            usingNMF=config.run.using_nmf,
+            spatial_coords=group_data.spatial_coords,
+        )
         cscn.run_pc_concurrently(
             max_workers=max_workers,
             progress_interval=config.run.progress_interval,

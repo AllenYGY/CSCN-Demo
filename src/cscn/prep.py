@@ -16,6 +16,7 @@ class PreparedGroupData:
     group_key: str
     cell_ids: list[str]
     matrix: np.ndarray
+    spatial_coords: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,21 @@ def prepare_run_inputs(dataset: LoadedDataset, config: CSCNConfig) -> PreparedRu
 
     groups: dict[str, PreparedGroupData] = {}
     sampled_metadata_frames: list[pd.DataFrame] = []
+    spatial_columns = [
+        key
+        for key in (
+            config.input.spatial_x_key,
+            config.input.spatial_y_key,
+            config.input.spatial_z_key,
+        )
+        if key
+    ]
+    if spatial_columns:
+        missing_columns = [column for column in spatial_columns if column not in dataset.metadata.columns]
+        if missing_columns:
+            raise ConfigError(
+                f"Metadata is missing the configured spatial columns: {missing_columns}"
+            )
     for group_key, cell_ids in sampled_cells.items():
         frame = dataset.expression.loc[cell_ids, gene_names]
         matrix = frame.to_numpy(dtype=np.float64, copy=True)
@@ -112,10 +128,20 @@ def prepare_run_inputs(dataset: LoadedDataset, config: CSCNConfig) -> PreparedRu
             matrix = _normalize_counts(matrix)
         if config.preprocess.log1p:
             matrix = np.log1p(matrix)
+        spatial_coords = None
+        if config.input.spatial_x_key and config.input.spatial_y_key:
+            coords_frame = dataset.metadata.loc[cell_ids, spatial_columns].copy()
+            coords_frame = coords_frame.apply(pd.to_numeric, errors="coerce")
+            if coords_frame.isnull().any().any():
+                raise ConfigError(
+                    f"Spatial coordinates contain missing or non-numeric values for group {group_key}."
+                )
+            spatial_coords = coords_frame.to_numpy(dtype=np.float32, copy=True)
         groups[group_key] = PreparedGroupData(
             group_key=group_key,
             cell_ids=[str(cell_id) for cell_id in cell_ids],
             matrix=matrix.astype(np.float32),
+            spatial_coords=spatial_coords,
         )
 
         group_metadata = dataset.metadata.loc[cell_ids].copy()

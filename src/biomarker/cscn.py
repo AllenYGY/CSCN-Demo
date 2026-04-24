@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 from sklearn.decomposition import NMF
+from sklearn.neighbors import NearestNeighbors
 
 from .kdt import KDT
 
@@ -40,6 +41,14 @@ class CSCN:
         debug=False,
         show_progress=False,
         progress_interval=100,
+        spatial_enabled=False,
+        spatial_mode="knn",
+        spatial_k=8,
+        spatial_radius=None,
+        spatial_kernel="gaussian",
+        spatial_bandwidth=None,
+        spatial_lambda_expr=0.2,
+        spatial_min_effective_neighbors=15,
     ):
         self.output_dir = output_dir
         self.sigmoid_score = sigmoid_score
@@ -56,11 +65,24 @@ class CSCN:
         self.df = None
         self.kdtree = None
         self.loadings = None
+        self.spatial_enabled = spatial_enabled
+        self.spatial_mode = spatial_mode
+        self.spatial_k = spatial_k
+        self.spatial_radius = spatial_radius
+        self.spatial_kernel = spatial_kernel
+        self.spatial_bandwidth = spatial_bandwidth
+        self.spatial_lambda_expr = spatial_lambda_expr
+        self.spatial_min_effective_neighbors = spatial_min_effective_neighbors
+        self.spatial_coords = None
+        self.spatial_neighbor_cache = {}
+        self.spatial_weight_cache = {}
         os.makedirs(output_dir, exist_ok=True)
 
     def clear_cache(self):
         self.ran_cache.clear()
         self.bits_cache.clear()
+        self.spatial_neighbor_cache.clear()
+        self.spatial_weight_cache.clear()
 
     def get_ran_with_indices(self, gene_id, key_cell_idx, sigmoid_score=None):
         if sigmoid_score is None:
@@ -150,6 +172,131 @@ class CSCN:
             bitsets.append(self.get_bits(idx, key_cell_idx, sigmoid_score))
         return intersection_size(bitsets)
 
+    def _bitset_to_indices(self, bitset):
+        indices = []
+        idx = 0
+        while bitset:
+            if bitset & 1:
+                indices.append(idx)
+            bitset >>= 1
+            idx += 1
+        return indices
+
+    def build_spatial_neighbors(self):
+        self.spatial_neighbor_cache.clear()
+        if not self.spatial_enabled or self.spatial_coords is None:
+            return
+        coords = np.asarray(self.spatial_coords, dtype=np.float64)
+        if coords.ndim != 2 or coords.shape[0] == 0 or coords.shape[1] < 2:
+            return
+
+        n_cells = coords.shape[0]
+        nn = NearestNeighbors()
+        nn.fit(coords[:, :2])
+        if self.spatial_mode == "knn":
+            n_neighbors = min(max(int(self.spatial_k), 1), n_cells)
+            distances, indices = nn.kneighbors(coords[:, :2], n_neighbors=n_neighbors)
+            for idx in range(n_cells):
+                self.spatial_neighbor_cache[idx] = (
+                    np.asarray(indices[idx], dtype=np.int64),
+                    np.asarray(distances[idx], dtype=np.float64),
+                )
+            return
+
+        if self.spatial_mode == "radius":
+            radius = float(self.spatial_radius) if self.spatial_radius is not None else 0.0
+            indices_list, distances_list = nn.radius_neighbors(
+                coords[:, :2], radius=radius, sort_results=True
+            )
+            for idx in range(n_cells):
+                self.spatial_neighbor_cache[idx] = (
+                    np.asarray(indices_list[idx], dtype=np.int64),
+                    np.asarray(distances_list[idx], dtype=np.float64),
+                )
+
+    def get_spatial_weights(self, key_cell_idx):
+        if key_cell_idx in self.spatial_weight_cache:
+            return self.spatial_weight_cache[key_cell_idx]
+
+        n_cells = self.data.shape[0]
+        if not self.spatial_enabled or self.spatial_coords is None:
+            weight_lookup = np.ones(n_cells, dtype=np.float64)
+            result = (np.arange(n_cells, dtype=np.int64), weight_lookup)
+            self.spatial_weight_cache[key_cell_idx] = result
+            return result
+
+        cached = self.spatial_neighbor_cache.get(key_cell_idx)
+        if cached is None:
+            weight_lookup = np.ones(n_cells, dtype=np.float64)
+            result = (np.arange(n_cells, dtype=np.int64), weight_lookup)
+            self.spatial_weight_cache[key_cell_idx] = result
+            return result
+
+        indices, distances = cached
+        if len(indices) <= 1:
+            weight_lookup = np.ones(n_cells, dtype=np.float64)
+            result = (np.arange(n_cells, dtype=np.int64), weight_lookup)
+            self.spatial_weight_cache[key_cell_idx] = result
+            return result
+
+        if self.spatial_kernel == "binary":
+            neighbor_weights = np.ones(len(indices), dtype=np.float64)
+        else:
+            bandwidth = self.spatial_bandwidth
+            if bandwidth is None:
+                positive = distances[distances > 0]
+                bandwidth = float(np.median(positive)) if len(positive) else 1.0
+            bandwidth = max(float(bandwidth), 1e-12)
+            neighbor_weights = np.exp(-(distances**2) / (2 * (bandwidth**2)))
+            max_weight = np.max(neighbor_weights) if len(neighbor_weights) else 1.0
+            if max_weight > 0:
+                neighbor_weights = neighbor_weights / max_weight
+
+        weight_lookup = np.full(n_cells, float(self.spatial_lambda_expr), dtype=np.float64)
+        weight_lookup[indices] = (
+            float(self.spatial_lambda_expr)
+            + (1.0 - float(self.spatial_lambda_expr)) * neighbor_weights
+        )
+        result = (indices, weight_lookup)
+        self.spatial_weight_cache[key_cell_idx] = result
+        return result
+
+    def get_effective_sample_size(self, weights):
+        weights = np.asarray(weights, dtype=np.float64)
+        denom = np.sum(weights**2)
+        if denom <= 0:
+            return 0.0
+        total = np.sum(weights)
+        return float((total**2) / denom)
+
+    def get_weighted_conditional_counts(self, genes, key_cell_idx, sigmoid_score=None):
+        if sigmoid_score is None:
+            sigmoid_score = self.sigmoid_score
+        _, weight_lookup = self.get_spatial_weights(key_cell_idx)
+        if len(genes) == 0:
+            return float(np.sum(weight_lookup))
+
+        intersected = None
+        for idx in genes:
+            gene_bits = self.get_bits(idx, key_cell_idx, sigmoid_score)
+            intersected = gene_bits if intersected is None else (intersected & gene_bits)
+            if intersected == 0:
+                return 0.0
+
+        matched_indices = self._bitset_to_indices(intersected)
+        if not matched_indices:
+            return 0.0
+        return float(np.sum(weight_lookup[matched_indices]))
+
+    def _should_use_spatial_counts(self, key_cell_idx):
+        if not self.spatial_enabled or self.spatial_coords is None:
+            return False, None, None
+        neighbor_indices, weight_lookup = self.get_spatial_weights(key_cell_idx)
+        n_eff = self.get_effective_sample_size(weight_lookup)
+        if len(neighbor_indices) <= 1 or n_eff < self.spatial_min_effective_neighbors:
+            return False, weight_lookup, n_eff
+        return True, weight_lookup, n_eff
+
     def get_conditional_counts(self, genes, key_cell_idx, sigmoid_score=None):
         if sigmoid_score is None:
             sigmoid_score = self.sigmoid_score
@@ -187,30 +334,49 @@ class CSCN:
             sigmoid_score = self.sigmoid_score
 
         try:
+            use_spatial_counts, weight_lookup, n_eff = self._should_use_spatial_counts(
+                key_cell_idx
+            )
             condition_set = set(Z)
-            count_z = self.get_conditional_counts(
-                condition_set, key_cell_idx, sigmoid_score
+            count_z = (
+                self.get_weighted_conditional_counts(
+                    condition_set, key_cell_idx, sigmoid_score
+                )
+                if use_spatial_counts
+                else self.get_conditional_counts(condition_set, key_cell_idx, sigmoid_score)
             )
             if count_z <= 1:
                 return False
 
             x_condition_set = condition_set.copy()
             x_condition_set.add(X)
-            count_x_z = self.get_conditional_counts(
-                x_condition_set, key_cell_idx, sigmoid_score
+            count_x_z = (
+                self.get_weighted_conditional_counts(
+                    x_condition_set, key_cell_idx, sigmoid_score
+                )
+                if use_spatial_counts
+                else self.get_conditional_counts(x_condition_set, key_cell_idx, sigmoid_score)
             )
 
             y_condition_set = condition_set.copy()
             y_condition_set.add(Y)
-            count_y_z = self.get_conditional_counts(
-                y_condition_set, key_cell_idx, sigmoid_score
+            count_y_z = (
+                self.get_weighted_conditional_counts(
+                    y_condition_set, key_cell_idx, sigmoid_score
+                )
+                if use_spatial_counts
+                else self.get_conditional_counts(y_condition_set, key_cell_idx, sigmoid_score)
             )
 
             xy_condition_set = condition_set.copy()
             xy_condition_set.add(X)
             xy_condition_set.add(Y)
-            count_xy_z = self.get_conditional_counts(
-                xy_condition_set, key_cell_idx, sigmoid_score
+            count_xy_z = (
+                self.get_weighted_conditional_counts(
+                    xy_condition_set, key_cell_idx, sigmoid_score
+                )
+                if use_spatial_counts
+                else self.get_conditional_counts(xy_condition_set, key_cell_idx, sigmoid_score)
             )
 
             rho = ((count_z * count_xy_z) - (count_x_z * count_y_z)) / (count_z**2)
@@ -223,7 +389,12 @@ class CSCN:
                 * (count_z - count_y_z)
             )
             variance_numerator = np.clip(variance_numerator, epsilon, None)
-            variance_denominator = (count_z**4) * (count_z - 1)
+            if use_spatial_counts:
+                if n_eff is None or n_eff <= 1 + epsilon:
+                    return False
+                variance_denominator = (count_z**4) * max(n_eff - 1, epsilon)
+            else:
+                variance_denominator = (count_z**4) * (count_z - 1)
             std_deviation = np.sqrt(
                 variance_numerator / (variance_denominator + epsilon)
             )
@@ -323,7 +494,7 @@ class CSCN:
         with open(filename, "rb") as handle:
             return pickle.load(handle)
 
-    def run_core(self, data, usingNMF=False):
+    def run_core(self, data, usingNMF=False, spatial_coords=None):
         _, col = data.shape
 
         if usingNMF:
@@ -338,4 +509,10 @@ class CSCN:
             self.loadings = np.eye(col)
         self.df = pd.DataFrame(self.data, index=range(self.data.shape[0]))
         self.kdtree = KDT(list(self.data))
+        self.spatial_coords = (
+            None
+            if spatial_coords is None
+            else np.asarray(spatial_coords, dtype=np.float64)
+        )
         self.clear_cache()
+        self.build_spatial_neighbors()

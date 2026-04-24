@@ -70,6 +70,9 @@ class RunLayout:
     def group_cells_path(self, group_key: str) -> Path:
         return self.matrices_dir / f"{safe_component(group_key)}_cells.csv"
 
+    def spatial_coords_path(self, group_key: str) -> Path:
+        return self.matrices_dir / f"{safe_component(group_key)}_spatial_coords.csv"
+
     def dag_group_dir(self, group_key: str) -> Path:
         return self.dags_dir / safe_component(group_key)
 
