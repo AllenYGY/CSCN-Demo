@@ -1,6 +1,7 @@
 from .config import CSCNConfig, ConfigError, load_config, serialize_config
 from .io import LoadedDataset, load_dataset
 from .workflow import aggregate_run, prepare_run, run_all, run_biomarker_workflow, run_cscn
+from .postprocess import run_ckm
 
 __all__ = [
     "CSCNConfig",
@@ -12,6 +13,7 @@ __all__ = [
     "prepare_run",
     "run_all",
     "run_biomarker_workflow",
+    "run_ckm",
     "run_cscn",
     "serialize_config",
 ]

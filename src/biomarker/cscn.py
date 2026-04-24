@@ -4,6 +4,7 @@ import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
@@ -68,6 +69,7 @@ class CSCN:
         self.df = None
         self.kdtree = None
         self.loadings = None
+        self.ckm = None
         self.spatial_enabled = spatial_enabled
         self.spatial_strategy = spatial_strategy
         self.spatial_mode = spatial_mode
@@ -557,6 +559,97 @@ class CSCN:
     def load_from_file(filename):
         with open(filename, "rb") as handle:
             return pickle.load(handle)
+
+    def _resolve_ckm_projection(self):
+        if self.data is None:
+            raise RuntimeError("CKM requires CSCN data. Run run_core() first.")
+
+        feature_count = int(self.data.shape[1])
+        if self.loadings is None:
+            return np.eye(feature_count, dtype=float)
+
+        loadings = np.asarray(self.loadings, dtype=float)
+        if loadings.ndim != 2:
+            raise ValueError("CSCN loadings must be a 2-dimensional matrix.")
+
+        if int(loadings.shape[0]) == feature_count:
+            return loadings
+        if int(loadings.shape[1]) == feature_count:
+            return loadings.T
+        raise ValueError(
+            "CKM projection could not align CSCN loadings with the current feature space."
+        )
+
+    @staticmethod
+    def _prepare_graph_for_ckm(dag, node_count: int):
+        graph = nx.DiGraph()
+        graph.add_nodes_from(range(node_count))
+        graph.add_edges_from(dag.edges())
+        invalid_nodes = sorted(
+            node for node in graph.nodes() if int(node) < 0 or int(node) >= node_count
+        )
+        if invalid_nodes:
+            raise ValueError(f"CKM DAG contains invalid node ids: {invalid_nodes[:10]}")
+        return graph
+
+    def compute_ckm(
+        self,
+        dags=None,
+        alpha: float = 0.05,
+        beta_transform: str = "log1p",
+        save_path: str | None = None,
+        strict: bool = True,
+    ):
+        if self.data is None:
+            raise RuntimeError("CKM requires CSCN data. Run run_core() first.")
+
+        projection = self._resolve_ckm_projection()
+        latent_dim = int(self.data.shape[1])
+        gene_dim = int(projection.shape[1])
+        n_cells = int(self.data.shape[0])
+        ckm = np.zeros((n_cells, gene_dim), dtype=float)
+
+        if dags is None:
+            dags = self.load_all_dags()
+        dags = list(dags)
+        if not dags:
+            raise RuntimeError("No DAGs were provided for CKM computation.")
+
+        dag_map = {int(cell_idx): dag for cell_idx, dag in dags}
+        missing = sorted(set(range(n_cells)) - set(dag_map))
+        if strict and missing:
+            raise ValueError(
+                f"CKM is missing DAGs for {len(missing)} cells, e.g. {missing[:10]}"
+            )
+
+        for cell_idx, dag in sorted(dag_map.items()):
+            if cell_idx < 0 or cell_idx >= n_cells:
+                raise ValueError(f"CKM received out-of-range cell index: {cell_idx}")
+
+            base_beta = np.asarray(self.data[cell_idx], dtype=float)
+            if beta_transform == "log1p":
+                beta = np.log1p(base_beta)
+            elif beta_transform == "identity":
+                beta = base_beta
+            else:
+                raise ValueError(f"Unsupported CKM beta_transform: {beta_transform}")
+
+            graph = self._prepare_graph_for_ckm(dag, latent_dim)
+            katz = nx.katz_centrality(
+                graph,
+                beta={node_idx: float(beta[node_idx]) for node_idx in range(latent_dim)},
+                alpha=float(alpha),
+            )
+            katz_vec = np.asarray(
+                [float(katz[node_idx]) for node_idx in range(latent_dim)],
+                dtype=float,
+            )
+            ckm[cell_idx, :] = np.log1p(katz_vec @ projection)
+
+        self.ckm = ckm
+        if save_path:
+            np.save(save_path, ckm)
+        return ckm
 
     def run_core(self, data, usingNMF=False, spatial_coords=None):
         self.using_nmf = usingNMF

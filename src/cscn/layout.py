@@ -20,6 +20,7 @@ class RunLayout:
     matrices_dir: Path
     dags_dir: Path
     objects_dir: Path
+    ckm_dir: Path
     consensus_dir: Path
     biomarker_dir: Path
     logs_dir: Path
@@ -41,6 +42,7 @@ class RunLayout:
             matrices_dir=run_dir / "matrices",
             dags_dir=run_dir / "dags",
             objects_dir=run_dir / "objects",
+            ckm_dir=run_dir / "ckm",
             consensus_dir=run_dir / "consensus",
             biomarker_dir=run_dir / "biomarker",
             logs_dir=run_dir / "logs",
@@ -58,6 +60,7 @@ class RunLayout:
             self.matrices_dir,
             self.dags_dir,
             self.objects_dir,
+            self.ckm_dir,
             self.consensus_dir,
             self.biomarker_dir,
             self.logs_dir,

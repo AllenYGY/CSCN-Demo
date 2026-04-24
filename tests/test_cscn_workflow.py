@@ -18,6 +18,7 @@ if str(SRC_DIR) not in sys.path:
 from cscn.config import load_config
 from cscn.config import ConfigError
 from cscn.layout import RunLayout
+from cscn.postprocess import run_ckm
 from cscn.viewer import discover_run_roots, load_run_graph, scan_run_root
 from cscn.workflow import aggregate_run, load_prepared_run, prepare_run, run_biomarker_workflow, run_cscn
 from tests.support.fake_graph import FakeGraph
@@ -515,6 +516,22 @@ def test_run_cscn_with_local_knn_subset_produces_dags(tmp_path):
     assert summary.groups == {"A": 2, "B": 2}
     assert len(list(layout.dag_group_dir("A").glob("result_*.pkl"))) == 2
     assert len(list(layout.dag_group_dir("B").glob("result_*.pkl"))) == 2
+
+
+def test_run_ckm_writes_ckm_matrix(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+    config_path = build_table_config(tmp_path, sample_per_group=None, top_n=2)
+    config = load_config(config_path)
+    prepare_run(config)
+    run_cscn(config)
+    layout = RunLayout.from_config(config)
+
+    ckm = run_ckm(layout, "A")
+
+    assert ckm.shape == (2, 2)
+    assert (layout.ckm_dir / "A_ckm.npy").is_file()
 
 
 def build_table_config(
