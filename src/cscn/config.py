@@ -116,6 +116,7 @@ class RunConfig:
 @dataclass(frozen=True)
 class SpatialConfig:
     enabled: bool = False
+    strategy: str = "weighted_counts"
     mode: str = "knn"
     k: int = 8
     radius: float | None = None
@@ -266,6 +267,7 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         progress_interval=int(run_raw.get("progress_interval") or 100),
         spatial=SpatialConfig(
             enabled=bool(spatial_raw.get("enabled", False)),
+            strategy=str(spatial_raw.get("strategy") or "weighted_counts").strip().lower(),
             mode=str(spatial_raw.get("mode") or "knn").strip().lower(),
             k=int(spatial_raw.get("k", 8)),
             radius=_get_optional_float(spatial_raw, "radius"),
@@ -275,6 +277,10 @@ def load_config(config_path: str | Path) -> CSCNConfig:
             min_effective_neighbors=int(spatial_raw.get("min_effective_neighbors", 15)),
         ),
     )
+    if run.spatial.strategy not in {"weighted_counts", "local_knn_subset"}:
+        raise ConfigError(
+            "`run.spatial.strategy` must be `weighted_counts` or `local_knn_subset`."
+        )
     if run.spatial.mode not in {"knn", "radius"}:
         raise ConfigError("`run.spatial.mode` must be `knn` or `radius`.")
     if run.spatial.kernel not in {"binary", "gaussian"}:
@@ -289,6 +295,15 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         run.spatial.radius is None or run.spatial.radius <= 0
     ):
         raise ConfigError("`run.spatial.radius` must be positive when spatial radius mode is enabled.")
+    if run.spatial.enabled and run.spatial.strategy == "local_knn_subset":
+        if not input_config.spatial_x_key or not input_config.spatial_y_key:
+            raise ConfigError(
+                "`run.spatial.strategy=local_knn_subset` requires spatial coordinate keys."
+            )
+        if run.spatial.mode != "knn":
+            raise ConfigError(
+                "`run.spatial.strategy=local_knn_subset` currently requires `run.spatial.mode=knn`."
+            )
 
     aggregate_raw = raw.get("aggregate") or {}
     if not isinstance(aggregate_raw, dict):

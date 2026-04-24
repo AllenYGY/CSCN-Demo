@@ -42,6 +42,7 @@ class CSCN:
         show_progress=False,
         progress_interval=100,
         spatial_enabled=False,
+        spatial_strategy="weighted_counts",
         spatial_mode="knn",
         spatial_k=8,
         spatial_radius=None,
@@ -59,13 +60,16 @@ class CSCN:
         self.debug = debug
         self.show_progress = show_progress
         self.progress_interval = progress_interval
+        self.using_nmf = False
         self.ran_cache = {}
         self.bits_cache = {}
         self.data = None
+        self.raw_data = None
         self.df = None
         self.kdtree = None
         self.loadings = None
         self.spatial_enabled = spatial_enabled
+        self.spatial_strategy = spatial_strategy
         self.spatial_mode = spatial_mode
         self.spatial_k = spatial_k
         self.spatial_radius = spatial_radius
@@ -214,6 +218,57 @@ class CSCN:
                     np.asarray(distances_list[idx], dtype=np.float64),
                 )
 
+    def get_local_subset_indices(self, key_cell_idx):
+        if not self.spatial_enabled or self.spatial_coords is None:
+            return np.arange(self.data.shape[0], dtype=np.int64)
+        cached = self.spatial_neighbor_cache.get(key_cell_idx)
+        if cached is None:
+            return np.arange(self.data.shape[0], dtype=np.int64)
+        indices = np.asarray(cached[0], dtype=np.int64)
+        if len(indices) == 0:
+            return np.asarray([key_cell_idx], dtype=np.int64)
+        return indices
+
+    def build_local_df_for_key_cell(self, key_cell_idx):
+        subset_indices = self.get_local_subset_indices(key_cell_idx)
+        local_matrix = np.asarray(self.raw_data[subset_indices], dtype=np.float64)
+        local_key_matches = np.where(subset_indices == key_cell_idx)[0]
+        if len(local_key_matches) == 0:
+            raise ValueError(f"Key cell {key_cell_idx} is missing from its local subset.")
+        local_key_idx = int(local_key_matches[0])
+        return pd.DataFrame(local_matrix, index=range(local_matrix.shape[0])), local_key_idx
+
+    def _build_local_worker(self, subset_indices):
+        local_worker = CSCN(
+            output_dir=self.output_dir,
+            sigmoid_score=self.sigmoid_score,
+            pc_var=self.pc_var,
+            significance_level=self.significance_level,
+            max_cond_vars=self.max_cond_vars,
+            use_bitmap=self.use_bitmap,
+            debug=self.debug,
+            show_progress=self.show_progress,
+            progress_interval=self.progress_interval,
+            spatial_enabled=False,
+            spatial_strategy="weighted_counts",
+            spatial_mode=self.spatial_mode,
+            spatial_k=self.spatial_k,
+            spatial_radius=self.spatial_radius,
+            spatial_kernel=self.spatial_kernel,
+            spatial_bandwidth=self.spatial_bandwidth,
+            spatial_lambda_expr=self.spatial_lambda_expr,
+            spatial_min_effective_neighbors=self.spatial_min_effective_neighbors,
+        )
+        local_spatial_coords = None
+        if self.spatial_coords is not None:
+            local_spatial_coords = np.asarray(self.spatial_coords[subset_indices], dtype=np.float64)
+        local_worker.run_core(
+            np.asarray(self.raw_data[subset_indices], dtype=np.float64),
+            usingNMF=self.using_nmf,
+            spatial_coords=local_spatial_coords,
+        )
+        return local_worker
+
     def get_spatial_weights(self, key_cell_idx):
         if key_cell_idx in self.spatial_weight_cache:
             return self.spatial_weight_cache[key_cell_idx]
@@ -289,7 +344,11 @@ class CSCN:
         return float(np.sum(weight_lookup[matched_indices]))
 
     def _should_use_spatial_counts(self, key_cell_idx):
-        if not self.spatial_enabled or self.spatial_coords is None:
+        if (
+            not self.spatial_enabled
+            or self.spatial_coords is None
+            or self.spatial_strategy != "weighted_counts"
+        ):
             return False, None, None
         neighbor_indices, weight_lookup = self.get_spatial_weights(key_cell_idx)
         n_eff = self.get_effective_sample_size(weight_lookup)
@@ -417,6 +476,11 @@ class CSCN:
             return True
 
     def run_pc(self, key_cell_idx):
+        if self.spatial_enabled and self.spatial_strategy == "local_knn_subset":
+            subset_indices = self.get_local_subset_indices(key_cell_idx)
+            local_worker = self._build_local_worker(subset_indices)
+            local_key_idx = int(np.where(subset_indices == key_cell_idx)[0][0])
+            return local_worker.run_pc(local_key_idx)
         pc = PC(self.df)
         return pc.estimate(
             variant=self.pc_var,
@@ -495,17 +559,19 @@ class CSCN:
             return pickle.load(handle)
 
     def run_core(self, data, usingNMF=False, spatial_coords=None):
+        self.using_nmf = usingNMF
+        self.raw_data = np.asarray(data, dtype=np.float64)
         _, col = data.shape
 
         if usingNMF:
             n_components = min(col, 100)
             nmf = NMF(n_components=n_components, random_state=42, max_iter=50000)
-            factors = nmf.fit_transform(data)
+            factors = nmf.fit_transform(self.raw_data)
             loadings = nmf.components_.T
             self.data = factors
             self.loadings = loadings
         else:
-            self.data = data
+            self.data = self.raw_data
             self.loadings = np.eye(col)
         self.df = pd.DataFrame(self.data, index=range(self.data.shape[0]))
         self.kdtree = KDT(list(self.data))

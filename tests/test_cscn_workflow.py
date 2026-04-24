@@ -170,6 +170,7 @@ def test_spatial_config_parses_and_prepare_persists_coords(tmp_path):
     assert config.input.spatial_x_key == "array_row"
     assert config.input.spatial_y_key == "array_col"
     assert config.run.spatial.enabled is True
+    assert config.run.spatial.strategy == "weighted_counts"
     assert config.run.spatial.mode == "knn"
     assert config.run.spatial.k == 2
     assert config.run.spatial.lambda_expr == 0.0
@@ -227,6 +228,67 @@ def test_spatial_config_rejects_invalid_values(tmp_path):
         assert "lambda_expr" in str(exc)
     else:
         raise AssertionError("Expected invalid lambda_expr to be rejected")
+
+    bad_strategy_path = build_table_config(
+        tmp_path / "bad_strategy",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    strategy: unsupported",
+            "    mode: knn",
+            "    k: 2",
+        ],
+    )
+    try:
+        load_config(bad_strategy_path)
+    except ConfigError as exc:
+        assert "strategy" in str(exc)
+    else:
+        raise AssertionError("Expected invalid strategy to be rejected")
+
+
+def test_local_knn_subset_requires_spatial_keys_and_knn_mode(tmp_path):
+    no_coord_config = build_table_config(
+        tmp_path / "local_no_coord",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=False,
+    )
+    no_coord_path = Path(no_coord_config)
+    no_coord_path.write_text(
+        no_coord_path.read_text(encoding="utf-8").replace(
+            "run:\n  output_dir: runs\n",
+            "run:\n  output_dir: runs\n  spatial:\n    enabled: true\n    strategy: local_knn_subset\n    mode: knn\n    k: 2\n",
+        ),
+        encoding="utf-8",
+    )
+    try:
+        load_config(no_coord_path)
+    except ConfigError as exc:
+        assert "requires spatial coordinate keys" in str(exc)
+    else:
+        raise AssertionError("Expected local_knn_subset to require spatial keys")
+
+    radius_path = build_table_config(
+        tmp_path / "local_radius",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: local_knn_subset",
+            "    mode: radius",
+            "    radius: 1.5",
+            "    k: 2",
+        ],
+    )
+    try:
+        load_config(radius_path)
+    except ConfigError as exc:
+        assert "requires `run.spatial.mode=knn`" in str(exc)
+    else:
+        raise AssertionError("Expected local_knn_subset to reject radius mode")
 
 
 def test_spatial_input_requires_paired_keys(tmp_path):
@@ -353,6 +415,45 @@ def test_spatial_weighted_counts_support_knn_and_radius():
     assert radius_count == 2.0
 
 
+def test_local_knn_subset_indices_and_local_df_are_correct():
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    from cscn.core import CSCN
+
+    matrix = pd.DataFrame(
+        [
+            [10.0, 0.0],
+            [20.0, 1.0],
+            [30.0, 2.0],
+            [40.0, 3.0],
+        ]
+    ).to_numpy()
+    coords = pd.DataFrame(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [5.0, 0.0],
+            [6.0, 0.0],
+        ]
+    ).to_numpy()
+
+    cscn = CSCN(
+        spatial_enabled=True,
+        spatial_strategy="local_knn_subset",
+        spatial_mode="knn",
+        spatial_k=2,
+    )
+    cscn.run_core(matrix, spatial_coords=coords)
+    subset_indices = cscn.get_local_subset_indices(0)
+    assert subset_indices.tolist() == [0, 1]
+
+    local_df, local_key_idx = cscn.build_local_df_for_key_cell(0)
+    assert local_key_idx == 0
+    assert local_df.shape == (2, 2)
+    assert local_df.iloc[0, 0] == 10.0
+    assert local_df.iloc[1, 0] == 20.0
+
+
 def test_spatial_fallback_triggers_for_too_few_effective_neighbors():
     pytest.importorskip("scipy")
     pytest.importorskip("sklearn")
@@ -385,6 +486,35 @@ def test_spatial_fallback_triggers_for_too_few_effective_neighbors():
     cscn.run_core(matrix, spatial_coords=coords)
     use_spatial, _, _ = cscn._should_use_spatial_counts(0)
     assert use_spatial is False
+
+
+def test_run_cscn_with_local_knn_subset_produces_dags(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+    config_path = build_table_config(
+        tmp_path,
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: local_knn_subset",
+            "    mode: knn",
+            "    k: 2",
+            "    kernel: gaussian",
+            "    lambda_expr: 0.0",
+            "    min_effective_neighbors: 1",
+        ],
+    )
+    config = load_config(config_path)
+    prepare_run(config)
+    summary = run_cscn(config)
+    layout = RunLayout.from_config(config)
+
+    assert summary.groups == {"A": 2, "B": 2}
+    assert len(list(layout.dag_group_dir("A").glob("result_*.pkl"))) == 2
+    assert len(list(layout.dag_group_dir("B").glob("result_*.pkl"))) == 2
 
 
 def build_table_config(

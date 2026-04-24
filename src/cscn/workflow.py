@@ -172,6 +172,7 @@ def run_cscn(config: CSCNConfig) -> RunSummary:
             show_progress=config.run.show_progress,
             progress_interval=config.run.progress_interval,
             spatial_enabled=config.run.spatial.enabled,
+            spatial_strategy=config.run.spatial.strategy,
             spatial_mode=config.run.spatial.mode,
             spatial_k=config.run.spatial.k,
             spatial_radius=config.run.spatial.radius,
