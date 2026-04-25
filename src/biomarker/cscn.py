@@ -622,14 +622,25 @@ class CSCN:
                 f"CKM is missing DAGs for {len(missing)} cells, e.g. {missing[:10]}"
             )
 
+        resolved_beta_transform = beta_transform
+        if beta_transform == "auto":
+            resolved_beta_transform = (
+                "identity" if float(np.min(self.data)) <= -1.0 else "log1p"
+            )
+
         for cell_idx, dag in sorted(dag_map.items()):
             if cell_idx < 0 or cell_idx >= n_cells:
                 raise ValueError(f"CKM received out-of-range cell index: {cell_idx}")
 
             base_beta = np.asarray(self.data[cell_idx], dtype=float)
-            if beta_transform == "log1p":
+            if resolved_beta_transform == "log1p":
                 beta = np.log1p(base_beta)
-            elif beta_transform == "identity":
+                if not np.isfinite(beta).all():
+                    raise ValueError(
+                        "CKM beta_transform='log1p' produced non-finite values. "
+                        "Use beta_transform='identity' or 'auto' for centered/scaled inputs."
+                    )
+            elif resolved_beta_transform == "identity":
                 beta = base_beta
             else:
                 raise ValueError(f"Unsupported CKM beta_transform: {beta_transform}")
@@ -639,6 +650,7 @@ class CSCN:
                 graph,
                 beta={node_idx: float(beta[node_idx]) for node_idx in range(latent_dim)},
                 alpha=float(alpha),
+                max_iter=5000,
             )
             katz_vec = np.asarray(
                 [float(katz[node_idx]) for node_idx in range(latent_dim)],

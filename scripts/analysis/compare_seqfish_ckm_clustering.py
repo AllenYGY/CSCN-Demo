@@ -62,7 +62,7 @@ def ensure_group_ckm(
     group_key: str,
     *,
     alpha: float = 0.05,
-    beta_transform: str = "log1p",
+    beta_transform: str = "auto",
     strict: bool = True,
 ) -> np.ndarray:
     ckm_path = _ckm_path(run_dir, group_key)
@@ -90,7 +90,7 @@ def build_pooled_ckm_df(
     metadata: pd.DataFrame,
     *,
     alpha: float = 0.05,
-    beta_transform: str = "log1p",
+    beta_transform: str = "auto",
     strict: bool = True,
 ) -> pd.DataFrame:
     gene_names = _load_gene_names(run_dir)
@@ -276,6 +276,7 @@ def run_analysis(
     random_seed: int = 42,
     enable_umap: bool = True,
     n_pcs: int = 2,
+    ckm_beta_transform: str = "auto",
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -292,8 +293,16 @@ def run_analysis(
         raise ValueError("Weighted and local-KNN runs do not share the same gene list.")
 
     expr_df = build_expression_df(expr_path, metadata, weighted_genes)
-    weighted_ckm = build_pooled_ckm_df(weighted_run_dir, metadata)
-    local_ckm = build_pooled_ckm_df(local_knn_run_dir, metadata)
+    weighted_ckm = build_pooled_ckm_df(
+        weighted_run_dir,
+        metadata,
+        beta_transform=ckm_beta_transform,
+    )
+    local_ckm = build_pooled_ckm_df(
+        local_knn_run_dir,
+        metadata,
+        beta_transform=ckm_beta_transform,
+    )
 
     representations = {
         "expr": expr_df,
@@ -341,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--n-pcs", type=int, default=2)
+    parser.add_argument(
+        "--ckm-beta-transform",
+        choices=("auto", "log1p", "identity"),
+        default="auto",
+    )
     parser.add_argument("--umap", action="store_true")
     return parser
 
@@ -357,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
         random_seed=args.random_seed,
         enable_umap=args.umap,
         n_pcs=args.n_pcs,
+        ckm_beta_transform=args.ckm_beta_transform,
     )
     return 0
 

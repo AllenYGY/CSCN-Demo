@@ -535,6 +535,37 @@ def test_run_ckm_writes_ckm_matrix(tmp_path):
     assert (layout.ckm_dir / "A_ckm.npy").is_file()
 
 
+def test_compute_ckm_auto_beta_transform_handles_centered_inputs(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+
+    import networkx as nx
+    import numpy as np
+
+    from cscn.core import CSCN
+
+    cscn = CSCN(output_dir=str(tmp_path))
+    cscn.run_core(
+        np.asarray(
+            [
+                [-1.2, 0.2],
+                [0.3, 1.1],
+            ],
+            dtype=float,
+        )
+    )
+
+    dags = [
+        (0, nx.DiGraph([(0, 1)])),
+        (1, nx.DiGraph([(1, 0)])),
+    ]
+    ckm = cscn.compute_ckm(dags=dags, beta_transform="auto")
+
+    assert ckm.shape == (2, 2)
+    assert np.isfinite(ckm).all()
+
+
 def test_compare_seqfish_ckm_clustering_script_outputs_tables(tmp_path):
     pytest.importorskip("scipy")
     pytest.importorskip("sklearn")
