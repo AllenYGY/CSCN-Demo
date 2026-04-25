@@ -1,0 +1,6 @@
+args_all <- commandArgs(trailingOnly = FALSE)
+file_arg <- grep("^--file=", args_all, value = TRUE)
+wrapper_path <- normalizePath(sub("^--file=", "", file_arg[[1L]]), winslash = "/", mustWork = TRUE)
+repo_root <- dirname(wrapper_path)
+Sys.setenv(CSCN_REPO_ROOT = repo_root)
+source(file.path(repo_root, "scripts", "prep", "run_deseq2_GSE115978.R"), chdir = FALSE)
