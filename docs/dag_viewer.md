@@ -360,7 +360,7 @@ npm run build
 ## Run
 
 ```bash
-cscn viewer --config examples/GSE121893/config.yaml
+cscn viewer --config configs/GSE121893/config.yaml
 ```
 
 默认访问地址：

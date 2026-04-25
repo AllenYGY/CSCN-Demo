@@ -10,7 +10,6 @@ SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-
 DATA_SET = "GSE132465"
 RUN_NAME = f"{DATA_SET}_tumor_epithelial_vs_normal_epithelial"
 GROUP_TO_LABEL = {"normal": 0, "tumor": 1}
@@ -42,7 +41,7 @@ def log_stage(title):
 def resolve_default_data_dir():
     candidates = [
         REPO_ROOT / "data" / DATA_SET,
-        REPO_ROOT / "data" / "GSE32465",
+        REPO_ROOT / "data" / "GSE132465",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -61,20 +60,16 @@ def default_gene_list_path(output_dir: Path):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Run CSCN biomarker analysis for GSE132465 using tumor epithelial cells "
-            "versus normal epithelial cells."
-        )
-    )
+    parser = argparse.ArgumentParser(description=(
+        "Run CSCN biomarker analysis for GSE132465 using tumor epithelial cells "
+        "versus normal epithelial cells."))
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=resolve_default_data_dir(),
-        help=(
-            "Dataset directory that contains GSE132465_GEO_processed_CRC_10X_cell_annotation.txt.gz "
-            "and GSE132465_GEO_processed_CRC_10X_natural_log_TPM_matrix.txt.gz."
-        ),
+        help=
+        ("Dataset directory that contains GSE132465_GEO_processed_CRC_10X_cell_annotation.txt.gz "
+         "and GSE132465_GEO_processed_CRC_10X_natural_log_TPM_matrix.txt.gz."),
     )
     parser.add_argument(
         "--gene-list-path",
@@ -119,7 +114,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_group_cscn(data_dir: Path, run_name: str, group: str, matrix, max_workers: int):
+def run_group_cscn(data_dir: Path, run_name: str, group: str, matrix,
+                   max_workers: int):
     from biomarker.cscn import CSCN
 
     dag_dir = data_dir / "DAG" / run_name / group
@@ -146,10 +142,8 @@ def run_group_cscn(data_dir: Path, run_name: str, group: str, matrix, max_worker
     )
     log(f"running run_core() for {group}")
     cscn.run_core(matrix, usingNMF=False)
-    log(
-        f"running run_pc_concurrently() for {group}; "
-        f"DAG files are written incrementally as each task completes"
-    )
+    log(f"running run_pc_concurrently() for {group}; "
+        f"DAG files are written incrementally as each task completes")
     cscn.run_pc_concurrently(
         max_workers=max_workers,
         progress_interval=100,
@@ -166,8 +160,10 @@ def log_group_summary(summary_by_group):
         log(f"eligible cells for {group}: {summary['total_cells']}")
         sample_counts = summary["sample_counts"]
         if sample_counts:
-            sorted_samples = sorted(sample_counts.items(), key=lambda item: (-item[1], item[0]))
-            preview = ", ".join(f"{name}={count}" for name, count in sorted_samples[:10])
+            sorted_samples = sorted(sample_counts.items(),
+                                    key=lambda item: (-item[1], item[0]))
+            preview = ", ".join(f"{name}={count}"
+                                for name, count in sorted_samples[:10])
             log(f"{group} sample counts: {preview}")
         subtype_counts = summary["cell_subtype_counts"]
         if subtype_counts:
@@ -175,31 +171,26 @@ def log_group_summary(summary_by_group):
                 subtype_counts.items(),
                 key=lambda item: (-item[1], item[0]),
             )
-            preview = ", ".join(f"{name}={count}" for name, count in sorted_subtypes[:10])
+            preview = ", ".join(f"{name}={count}"
+                                for name, count in sorted_subtypes[:10])
             log(f"{group} subtype counts: {preview}")
 
 
 def main():
     args = parse_args()
 
-    from biomarker.datasets import (
-        build_expression_df,
-        load_gene_names,
-        load_gse132465_grouped_cells,
-        read_expression_for_sampled_cells,
-        sample_cells_by_group,
-        save_prepared_inputs,
-    )
+    from biomarker.datasets import (build_expression_df, load_gene_names,
+                                    load_gse132465_grouped_cells,
+                                    read_expression_for_sampled_cells,
+                                    sample_cells_by_group,
+                                    save_prepared_inputs)
 
     data_dir = args.data_dir.resolve()
     output_dir = data_dir / "output_deseq"
     annotation_path = data_dir / "GSE132465_GEO_processed_CRC_10X_cell_annotation.txt.gz"
     expression_matrix_path = data_dir / "GSE132465_GEO_processed_CRC_10X_natural_log_TPM_matrix.txt.gz"
-    gene_list_path = (
-        args.gene_list_path.resolve()
-        if args.gene_list_path is not None
-        else default_gene_list_path(output_dir)
-    )
+    gene_list_path = (args.gene_list_path.resolve() if args.gene_list_path
+                      is not None else default_gene_list_path(output_dir))
     run_name = args.run_name
     biomarker_path = data_dir / f"Biomarkers_{run_name}.csv"
 
@@ -245,7 +236,8 @@ def main():
         log(f"first 3 sampled {group} cells: {cell_ids[:3]}")
 
     log_stage("Extract Expression")
-    log("reading selected genes from natural log TPM matrix; this can take a while")
+    log("reading selected genes from natural log TPM matrix; this can take a while"
+        )
     matrices, used_genes = read_expression_for_sampled_cells(
         counts_path=expression_matrix_path,
         sampled_cells=sampled_cells,
@@ -253,10 +245,8 @@ def main():
         delimiter="\t",
     )
     for group, matrix in matrices.items():
-        log(
-            f"natural log TPM {group} matrix shape: {matrix.shape}, "
-            f"min={matrix.min():.3f}, max={matrix.max():.3f}"
-        )
+        log(f"natural log TPM {group} matrix shape: {matrix.shape}, "
+            f"min={matrix.min():.3f}, max={matrix.max():.3f}")
 
     log_stage("Save Prepared Inputs")
     save_prepared_inputs(
@@ -269,14 +259,15 @@ def main():
     )
 
     for group, matrix in matrices.items():
-        log(
-            f"saved {group} matrix shape: {matrix.shape}, "
+        log(f"saved {group} matrix shape: {matrix.shape}, "
             f"dtype={matrix.dtype}, min={matrix.min():.3f}, max={matrix.max():.3f}"
-        )
+            )
         log(f"saved matrix: {output_dir / f'{run_name}_{group}.npy'}")
-        log(f"saved sampled cells: {output_dir / f'{run_name}_{group}_sampled_cells.csv'}")
+        log(f"saved sampled cells: {output_dir / f'{run_name}_{group}_sampled_cells.csv'}"
+            )
     log(f"genes used after extraction: {len(used_genes)}")
-    log(f"saved used-gene list: {output_dir / f'{run_name}_top{len(used_genes)}_genes_used.csv'}")
+    log(f"saved used-gene list: {output_dir / f'{run_name}_top{len(used_genes)}_genes_used.csv'}"
+        )
 
     if args.prepare_only:
         log("prepare-only mode enabled; stopping before CSCN")
@@ -285,11 +276,9 @@ def main():
     from biomarker.causal import run_causal_analysis
     from biomarker.cscn import CSCN
     from biomarker.datasets import load_saved_group_graphs
-    from biomarker.graph_utils import (
-        get_global_graph,
-        identify_biomarkers_from_group_graphs,
-        map_node_id_to_gene,
-    )
+    from biomarker.graph_utils import (get_global_graph,
+                                       identify_biomarkers_from_group_graphs,
+                                       map_node_id_to_gene)
 
     log_stage("Run CSCN")
     for group in GROUP_TO_LABEL:
@@ -314,10 +303,8 @@ def main():
         get_global_graph_fn=get_global_graph,
     )
     for group, graph in group_graphs.items():
-        log(
-            f"group graph {group}: nodes={graph.number_of_nodes()}, "
-            f"edges={graph.number_of_edges()}"
-        )
+        log(f"group graph {group}: nodes={graph.number_of_nodes()}, "
+            f"edges={graph.number_of_edges()}")
 
     log_stage("Identify Biomarkers")
     biomarkers_df = identify_biomarkers_from_group_graphs(

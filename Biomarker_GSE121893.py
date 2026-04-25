@@ -15,10 +15,10 @@ def main() -> int:
 
     print(
         "Biomarker_GSE121893.py is now a compatibility shim. "
-        "Use `cscn run-all --config examples/GSE121893/config.yaml` for new runs.",
+        "Use `cscn run-all --config configs/GSE121893/config.yaml` for new runs.",
         file=sys.stderr,
     )
-    return cscn_main(["run-all", "--config", "examples/GSE121893/config.yaml"])
+    return cscn_main(["run-all", "--config", "configs/GSE121893/config.yaml"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import pickle
 import sys
 from pathlib import Path
@@ -90,6 +91,51 @@ def test_aggregate_run_writes_consensus_csv_and_viewer_can_read_run_layout(tmp_p
     )
     assert consensus_payload["metadata"]["threshold"] == 2
     assert consensus_payload["edges"][0]["count"] == 2
+
+
+def test_run_viewer_exposes_block_debug_collection(tmp_path):
+    config_path = build_table_config(
+        tmp_path,
+        sample_per_group=None,
+        top_n=3,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: adaptive_block_prior",
+            "    block_gene_top_n: 2",
+            "    min_cells_per_block: 1",
+            "    halo_neighbor_blocks: 1",
+            "    block_overlap_min: 0.25",
+            "    density_clustering:",
+            "      eps: 0.75",
+            "      min_samples: 1",
+        ],
+    )
+    config = load_config(config_path)
+    prepare_run(config)
+    layout = RunLayout.from_config(config)
+    layout.block_dag_group_dir("A").mkdir(parents=True, exist_ok=True)
+    layout.block_prior_group_dir("A").mkdir(parents=True, exist_ok=True)
+    write_csv_rows = [
+        {"node_index": 0, "gene_name": "G2"},
+        {"node_index": 1, "gene_name": "G3"},
+    ]
+    pd.DataFrame(write_csv_rows).to_csv(layout.block_genes_path("A"), index=False)
+    with (layout.block_dag_group_dir("A") / "result_0.pkl").open("wb") as handle:
+        pickle.dump(FakeGraph(nodes=[0, 1], edges=[(0, 1)]), handle)
+
+    payload = scan_run_root(layout.run_dir)
+    debug_method = f"{layout.run_name}__blocks"
+    assert debug_method in payload["methods"]
+
+    graph_payload = load_run_graph(
+        root_path=layout.run_dir,
+        method=debug_method,
+        group_key="A",
+        mode="single",
+        result_id=0,
+    )
+    assert graph_payload["metadata"]["cellRunId"].startswith("cluster_")
 
 
 def test_biomarker_requires_case_and_control_groups(tmp_path):
@@ -188,6 +234,54 @@ def test_spatial_config_parses_and_prepare_persists_coords(tmp_path):
     prepared = load_prepared_run(layout)
     assert prepared.groups["A"].spatial_coords is not None
     assert prepared.groups["A"].spatial_coords.shape == (2, 2)
+    assert prepared.groups["A"].raw_matrix.shape == (2, 2)
+
+
+def test_adaptive_block_prior_prepare_persists_block_artifacts(tmp_path):
+    config_path = build_table_config(
+        tmp_path,
+        sample_per_group=None,
+        top_n=3,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: adaptive_block_prior",
+            "    block_gene_top_n: 2",
+            "    min_cells_per_block: 1",
+            "    halo_neighbor_blocks: 1",
+            "    block_overlap_min: 0.25",
+            "    prior_consensus_threshold: auto",
+            "    density_clustering:",
+            "      eps: 0.75",
+            "      min_samples: 1",
+        ],
+    )
+
+    config = load_config(config_path)
+    summary = prepare_run(config)
+    layout = RunLayout.from_config(config)
+
+    assert summary.groups == {"A": 2, "B": 2}
+    assert layout.block_manifest_path("A").is_file()
+    assert layout.block_cells_path("A").is_file()
+    assert layout.cell_block_assignment_path("A").is_file()
+    assert layout.block_matrix_path("A", "sum_then_normalize").is_file()
+    assert layout.block_matrix_path("A", "mean").is_file()
+    assert layout.block_genes_path("A").is_file()
+
+    manifest = pd.read_csv(layout.block_manifest_path("A"))
+    assignments = pd.read_csv(layout.cell_block_assignment_path("A"))
+    summary_payload = json.loads(layout.summary_path.read_text(encoding="utf-8"))
+    assert len(manifest) >= 1
+    assert assignments["primary_block_id"].astype(str).str.len().min() > 0
+    assert summary_payload["adaptive_blocks"]["A"] >= 1
+
+    prepared = load_prepared_run(layout)
+    adaptive = prepared.groups["A"].adaptive_blocks
+    assert adaptive is not None
+    assert adaptive.matrix_sum.shape[1] == 2
+    assert adaptive.matrix_mean.shape[1] == 2
+    assert any(len(block.cell_ids) >= 1 for block in adaptive.blocks)
 
 
 def test_spatial_config_rejects_invalid_values(tmp_path):
@@ -248,6 +342,55 @@ def test_spatial_config_rejects_invalid_values(tmp_path):
         assert "strategy" in str(exc)
     else:
         raise AssertionError("Expected invalid strategy to be rejected")
+
+
+def test_adaptive_block_prior_rejects_unsupported_inputs(tmp_path):
+    adaptive_path = build_table_config(
+        tmp_path / "adaptive_bad",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: adaptive_block_prior",
+            "    block_gene_top_n: 2",
+            "    min_cells_per_block: 1",
+            "    halo_neighbor_blocks: 1",
+            "    block_overlap_min: 1.2",
+        ],
+    )
+    try:
+        load_config(adaptive_path)
+    except ConfigError as exc:
+        assert "block_overlap_min" in str(exc)
+    else:
+        raise AssertionError("Expected invalid block_overlap_min to be rejected")
+
+    nmf_path = build_table_config(
+        tmp_path / "adaptive_nmf",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: adaptive_block_prior",
+            "    block_gene_top_n: 2",
+            "    min_cells_per_block: 1",
+            "    halo_neighbor_blocks: 1",
+            "    block_overlap_min: 0.25",
+        ],
+    )
+    nmf_text = Path(nmf_path).read_text(encoding="utf-8").replace(
+        "  output_dir: runs\n",
+        "  output_dir: runs\n  using_nmf: true\n",
+    )
+    Path(nmf_path).write_text(nmf_text, encoding="utf-8")
+    try:
+        load_config(nmf_path)
+    except ConfigError as exc:
+        assert "adaptive_block_prior" in str(exc)
+    else:
+        raise AssertionError("Expected adaptive_block_prior to reject using_nmf")
 
 
 def test_local_knn_subset_requires_spatial_keys_and_knn_mode(tmp_path):
@@ -456,6 +599,34 @@ def test_local_knn_subset_indices_and_local_df_are_correct():
     assert local_df.iloc[1, 0] == 20.0
 
 
+def test_adaptive_block_prior_uses_precomputed_local_subset_and_prior():
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    from cscn.core import CSCN
+
+    matrix = pd.DataFrame(
+        [
+            [10.0, 0.0, 1.0],
+            [20.0, 1.0, 2.0],
+            [30.0, 2.0, 3.0],
+        ]
+    ).to_numpy()
+    coords = pd.DataFrame([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]).to_numpy()
+    cscn = CSCN(
+        spatial_enabled=True,
+        spatial_strategy="adaptive_block_prior",
+        adaptive_local_subsets={0: [(0), (1)]},
+        adaptive_allowed_edges={0: {(0, 1)}},
+    )
+    cscn.run_core(matrix, spatial_coords=coords)
+
+    subset_indices = cscn.get_local_subset_indices(0)
+    assert subset_indices.tolist() == [0, 1]
+    assert cscn._pair_allowed_by_prior(0, 1) is True
+    cscn.active_allowed_edges = {(0, 1)}
+    assert cscn._pair_allowed_by_prior(0, 2) is False
+
+
 def test_spatial_fallback_triggers_for_too_few_effective_neighbors():
     pytest.importorskip("scipy")
     pytest.importorskip("sklearn")
@@ -517,6 +688,40 @@ def test_run_cscn_with_local_knn_subset_produces_dags(tmp_path):
     assert summary.groups == {"A": 2, "B": 2}
     assert len(list(layout.dag_group_dir("A").glob("result_*.pkl"))) == 2
     assert len(list(layout.dag_group_dir("B").glob("result_*.pkl"))) == 2
+
+
+def test_run_cscn_with_adaptive_block_prior_produces_block_artifacts(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+    config_path = build_table_config(
+        tmp_path,
+        sample_per_group=None,
+        top_n=3,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: adaptive_block_prior",
+            "    block_gene_top_n: 2",
+            "    min_cells_per_block: 1",
+            "    halo_neighbor_blocks: 1",
+            "    block_overlap_min: 0.25",
+            "    density_clustering:",
+            "      eps: 0.75",
+            "      min_samples: 1",
+        ],
+    )
+    config = load_config(config_path)
+    prepare_run(config)
+    summary = run_cscn(config)
+    layout = RunLayout.from_config(config)
+    runtime_summary = json.loads(layout.summary_path.read_text(encoding="utf-8"))
+
+    assert summary.groups == {"A": 2, "B": 2}
+    assert any(layout.block_dag_group_dir("A").glob("result_*.pkl"))
+    assert any(layout.block_prior_group_dir("A").glob("*.csv"))
+    assert "adaptive_block_prior_runtime" in runtime_summary
+    assert runtime_summary["adaptive_block_prior_runtime"]["A"]["block_count"] >= 1
 
 
 def test_run_ckm_writes_ckm_matrix(tmp_path):

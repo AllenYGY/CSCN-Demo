@@ -24,6 +24,7 @@ class RunLayout:
     consensus_dir: Path
     biomarker_dir: Path
     logs_dir: Path
+    blocks_dir: Path
     config_snapshot_path: Path
     group_manifest_path: Path
     genes_path: Path
@@ -46,6 +47,7 @@ class RunLayout:
             consensus_dir=run_dir / "consensus",
             biomarker_dir=run_dir / "biomarker",
             logs_dir=run_dir / "logs",
+            blocks_dir=run_dir / "blocks",
             config_snapshot_path=run_dir / "config.snapshot.yaml",
             group_manifest_path=run_dir / "inputs" / "groups.csv",
             genes_path=run_dir / "inputs" / "genes.csv",
@@ -64,6 +66,7 @@ class RunLayout:
             self.consensus_dir,
             self.biomarker_dir,
             self.logs_dir,
+            self.blocks_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +78,31 @@ class RunLayout:
 
     def spatial_coords_path(self, group_key: str) -> Path:
         return self.matrices_dir / f"{safe_component(group_key)}_spatial_coords.csv"
+
+    def raw_matrix_path(self, group_key: str) -> Path:
+        return self.matrices_dir / f"{safe_component(group_key)}_raw.npy"
+
+    def block_manifest_path(self, group_key: str) -> Path:
+        return self.blocks_dir / f"{safe_component(group_key)}_block_manifest.csv"
+
+    def block_cells_path(self, group_key: str) -> Path:
+        return self.blocks_dir / f"{safe_component(group_key)}_block_cells.csv"
+
+    def cell_block_assignment_path(self, group_key: str) -> Path:
+        return self.blocks_dir / f"{safe_component(group_key)}_cell_block_assignment.csv"
+
+    def block_matrix_path(self, group_key: str, aggregation: str) -> Path:
+        suffix = "sum" if aggregation == "sum_then_normalize" else "mean"
+        return self.blocks_dir / f"{safe_component(group_key)}_block_matrix_{suffix}.npy"
+
+    def block_genes_path(self, group_key: str) -> Path:
+        return self.blocks_dir / f"{safe_component(group_key)}_block_genes.csv"
+
+    def block_dag_group_dir(self, group_key: str) -> Path:
+        return self.blocks_dir / "block_dags" / safe_component(group_key)
+
+    def block_prior_group_dir(self, group_key: str) -> Path:
+        return self.blocks_dir / "block_priors" / safe_component(group_key)
 
     def dag_group_dir(self, group_key: str) -> Path:
         return self.dags_dir / safe_component(group_key)

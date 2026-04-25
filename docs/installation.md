@@ -71,7 +71,7 @@ python -m cscn.cli --help
 如果要验证 viewer 依赖是否完整：
 
 ```bash
-cscn viewer --config examples/GSE121893/config.yaml
+cscn viewer --config configs/GSE121893/config.yaml
 ```
 
 然后在浏览器打开：
@@ -88,7 +88,7 @@ data/
   GSE138852/
 ```
 
-仓库不会跟踪这些大数据文件；如果你换了数据位置，需要同步修改 `examples/` 或你自己的配置文件。
+仓库不会跟踪这些大数据文件；如果你换了数据位置，需要同步修改 `configs/` 或你自己的配置文件。
 
 ## 常用安装组合
 
@@ -184,5 +184,5 @@ pip install -e .[viewer]
 安装完成后，建议按这个顺序继续：
 
 1. 阅读 [Configuration](configuration.md)
-2. 查看 [Examples](../examples/README.md)
+2. 查看 [Configs](../configs/README.md)
 3. 如需网页可视化，阅读 [DAG Viewer](dag_viewer.md)

@@ -1,0 +1,68 @@
+run_name: scp2046_sham1_full_adaptive_block_prior
+
+input:
+  format: tables
+  expr_path: ../../data/SCP2046/expression/processed_s1.csv.gz
+  metadata_path: ../../data/SCP2046/cluster/spatial_s1.csv
+  expr_orientation: genes_by_cells
+  gene_key: GENE
+  metadata_cell_id_column: NAME
+  spatial_x_key: X
+  spatial_y_key: Y
+
+preprocess:
+  normalize: false
+  log1p: false
+  sample_per_group: null
+  random_seed: 42
+  gene_selection:
+    top_n: 150
+
+run:
+  output_dir: ../../runs
+  max_workers: 4
+  sigmoid_score: 0.1
+  significance_level: 0.05
+  max_cond_vars: 10
+  use_bitmap: true
+  using_nmf: false
+  show_progress: false
+  progress_interval: 100
+  spatial:
+    enabled: true
+    strategy: adaptive_block_prior
+    mode: knn
+    k: 8
+    kernel: gaussian
+    lambda_expr: 0.2
+    min_effective_neighbors: 15
+    block_generator: density_cluster_bbox
+    assignment: nearest_block
+    local_subset: block_plus_halo
+    prior_mode: skeleton_only
+    aggregation_modes:
+      - sum_then_normalize
+      - mean
+    default_aggregation: sum_then_normalize
+    block_gene_top_n: 50
+    min_cells_per_block: 25
+    halo_neighbor_blocks: 1
+    block_overlap_min: 0.25
+    prior_consensus_threshold: auto
+    fallback_to_local_knn_subset: true
+    density_clustering:
+      eps: 35.0
+      min_samples: 12
+
+aggregate:
+  consensus: true
+  consensus_threshold_mode: auto
+
+biomarker:
+  enabled: false
+
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  reload: false

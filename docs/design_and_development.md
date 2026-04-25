@@ -17,7 +17,7 @@
 
 - `src/cscn/`：正式主实现，负责新的配置化工作流
 - `src/biomarker/`：历史算法实现、biomarker 逻辑和 viewer 兼容能力
-- `examples/`：新 CLI 的配置示例
+- `configs/`：新 CLI 的配置模板
 - `legacy/`、旧脚本：保留参考，不作为主入口
 
 这意味着当前架构不是“彻底重写”，而是“用新的 orchestration 层包装并收敛旧算法能力”。

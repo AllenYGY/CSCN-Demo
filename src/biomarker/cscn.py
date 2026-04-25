@@ -51,6 +51,9 @@ class CSCN:
         spatial_bandwidth=None,
         spatial_lambda_expr=0.2,
         spatial_min_effective_neighbors=15,
+        adaptive_local_subsets=None,
+        adaptive_allowed_edges=None,
+        adaptive_fallback_to_local_knn_subset=True,
     ):
         self.output_dir = output_dir
         self.sigmoid_score = sigmoid_score
@@ -82,6 +85,10 @@ class CSCN:
         self.spatial_coords = None
         self.spatial_neighbor_cache = {}
         self.spatial_weight_cache = {}
+        self.adaptive_local_subsets = adaptive_local_subsets or {}
+        self.adaptive_allowed_edges = adaptive_allowed_edges or {}
+        self.adaptive_fallback_to_local_knn_subset = adaptive_fallback_to_local_knn_subset
+        self.active_allowed_edges = None
         os.makedirs(output_dir, exist_ok=True)
 
     def clear_cache(self):
@@ -221,6 +228,13 @@ class CSCN:
                 )
 
     def get_local_subset_indices(self, key_cell_idx):
+        if self.spatial_strategy == "adaptive_block_prior":
+            cached = self.adaptive_local_subsets.get(key_cell_idx)
+            if cached is not None:
+                indices = np.asarray(cached, dtype=np.int64)
+                if len(indices) == 0:
+                    return np.asarray([key_cell_idx], dtype=np.int64)
+                return indices
         if not self.spatial_enabled or self.spatial_coords is None:
             return np.arange(self.data.shape[0], dtype=np.int64)
         cached = self.spatial_neighbor_cache.get(key_cell_idx)
@@ -240,7 +254,7 @@ class CSCN:
         local_key_idx = int(local_key_matches[0])
         return pd.DataFrame(local_matrix, index=range(local_matrix.shape[0])), local_key_idx
 
-    def _build_local_worker(self, subset_indices):
+    def _build_local_worker(self, subset_indices, allowed_edges=None):
         local_worker = CSCN(
             output_dir=self.output_dir,
             sigmoid_score=self.sigmoid_score,
@@ -260,6 +274,9 @@ class CSCN:
             spatial_bandwidth=self.spatial_bandwidth,
             spatial_lambda_expr=self.spatial_lambda_expr,
             spatial_min_effective_neighbors=self.spatial_min_effective_neighbors,
+            adaptive_local_subsets=None,
+            adaptive_allowed_edges=None,
+            adaptive_fallback_to_local_knn_subset=self.adaptive_fallback_to_local_knn_subset,
         )
         local_spatial_coords = None
         if self.spatial_coords is not None:
@@ -269,7 +286,16 @@ class CSCN:
             usingNMF=self.using_nmf,
             spatial_coords=local_spatial_coords,
         )
+        if allowed_edges:
+            local_worker.active_allowed_edges = {
+                tuple(sorted((int(source), int(target)))) for source, target in allowed_edges
+            }
         return local_worker
+
+    def _pair_allowed_by_prior(self, X, Y):
+        if self.active_allowed_edges is None:
+            return True
+        return tuple(sorted((int(X), int(Y)))) in self.active_allowed_edges
 
     def get_spatial_weights(self, key_cell_idx):
         if key_cell_idx in self.spatial_weight_cache:
@@ -395,6 +421,8 @@ class CSCN:
             sigmoid_score = self.sigmoid_score
 
         try:
+            if not self._pair_allowed_by_prior(X, Y):
+                return True
             use_spatial_counts, weight_lookup, n_eff = self._should_use_spatial_counts(
                 key_cell_idx
             )
@@ -477,12 +505,7 @@ class CSCN:
             print(f"ICT ERROR: {str(e)}", flush=True)
             return True
 
-    def run_pc(self, key_cell_idx):
-        if self.spatial_enabled and self.spatial_strategy == "local_knn_subset":
-            subset_indices = self.get_local_subset_indices(key_cell_idx)
-            local_worker = self._build_local_worker(subset_indices)
-            local_key_idx = int(np.where(subset_indices == key_cell_idx)[0][0])
-            return local_worker.run_pc(local_key_idx)
+    def _estimate_pc(self, key_cell_idx):
         pc = PC(self.df)
         return pc.estimate(
             variant=self.pc_var,
@@ -494,6 +517,29 @@ class CSCN:
             sigmoid_score=self.sigmoid_score,
             show_progress=self.show_progress,
         )
+
+    def _run_pc_with_local_subset(self, key_cell_idx, subset_indices, allowed_edges=None):
+        local_worker = self._build_local_worker(subset_indices, allowed_edges=allowed_edges)
+        local_key_idx = int(np.where(np.asarray(subset_indices) == key_cell_idx)[0][0])
+        return local_worker._estimate_pc(local_key_idx)
+
+    def run_pc(self, key_cell_idx):
+        if self.spatial_enabled and self.spatial_strategy == "adaptive_block_prior":
+            allowed_edges = self.adaptive_allowed_edges.get(key_cell_idx)
+            if not allowed_edges and self.adaptive_fallback_to_local_knn_subset:
+                subset_indices = self.spatial_neighbor_cache.get(key_cell_idx, (None,))[0]
+                if subset_indices is not None and len(subset_indices) > 0:
+                    return self._run_pc_with_local_subset(key_cell_idx, subset_indices)
+            subset_indices = self.get_local_subset_indices(key_cell_idx)
+            return self._run_pc_with_local_subset(
+                key_cell_idx,
+                subset_indices,
+                allowed_edges=allowed_edges,
+            )
+        if self.spatial_enabled and self.spatial_strategy == "local_knn_subset":
+            subset_indices = self.get_local_subset_indices(key_cell_idx)
+            return self._run_pc_with_local_subset(key_cell_idx, subset_indices)
+        return self._estimate_pc(key_cell_idx)
 
     def run_pc_and_save(self, task_id):
         result = self.run_pc(task_id)

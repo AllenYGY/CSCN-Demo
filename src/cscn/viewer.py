@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pandas as pd
+
 try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +103,38 @@ def _discover_result_ids(group_dir: Path) -> list[int]:
     return sorted(result_ids)
 
 
+def _block_debug_method(run_root: Path) -> str:
+    return f"{safe_component(run_root.name)}__blocks"
+
+
+def _load_block_node_map(run_root: Path, group_key: str) -> dict[int, str]:
+    path = run_root / "blocks" / f"{safe_component(group_key)}_block_genes.csv"
+    if not path.is_file():
+        return {}
+    frame = pd.read_csv(path)
+    mapping: dict[int, str] = {}
+    for row in frame.to_dict(orient="records"):
+        try:
+            node_index = int(row["node_index"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapping[node_index] = str(row.get("gene_name") or node_index)
+    return mapping
+
+
+def _resolve_block_run_id(run_root: Path, group_key: str, result_id: int | None) -> str | None:
+    if result_id is None:
+        return None
+    manifest_path = run_root / "blocks" / f"{safe_component(group_key)}_block_manifest.csv"
+    if not manifest_path.is_file():
+        return None
+    frame = pd.read_csv(manifest_path)
+    match = frame.loc[frame["block_index"] == result_id]
+    if match.empty:
+        return None
+    return str(match.iloc[0]["block_id"])
+
+
 def scan_run_root(root_path: str | Path) -> dict[str, object]:
     run_root = Path(root_path).expanduser().resolve()
     if not _is_run_root(run_root):
@@ -128,6 +162,29 @@ def scan_run_root(root_path: str | Path) -> dict[str, object]:
             }
         )
 
+    block_debug_dir = run_root / "blocks" / "block_dags"
+    if block_debug_dir.is_dir():
+        debug_method = _block_debug_method(run_root)
+        for group_dir in sorted(block_debug_dir.iterdir(), key=lambda item: item.name):
+            if not group_dir.is_dir():
+                continue
+            result_ids = _discover_result_ids(group_dir)
+            if not result_ids:
+                continue
+            group_key = group_dir.name
+            groups.append(
+                {
+                    "method": debug_method,
+                    "groupKey": group_key,
+                    "time": "",
+                    "cellType": f"{labels.get(group_key, group_key)} (block debug)",
+                    "numDags": len(result_ids),
+                    "hasNodeMap": (run_root / "blocks" / f"{group_key}_block_genes.csv").is_file(),
+                    "hasConsensusCsv": False,
+                    "resultIds": result_ids,
+                }
+            )
+
     if not groups:
         raise DagViewerError(f"Run 目录中未找到任何 `result_*.pkl` 文件: {run_root}")
 
@@ -136,18 +193,30 @@ def scan_run_root(root_path: str | Path) -> dict[str, object]:
         "rootPath": str(run_root),
         "rootKind": "run",
         "rootLabel": run_root.name,
-        "methods": [collection_key],
+        "methods": [collection_key, *([_block_debug_method(run_root)] if block_debug_dir.is_dir() else [])],
         "collections": [
             {
                 "key": collection_key,
                 "displayLabel": "默认视图",
                 "rawLabel": run_root.name,
                 "kind": "single",
-            }
+            },
+            *(
+                [
+                    {
+                        "key": _block_debug_method(run_root),
+                        "displayLabel": "Block Debug",
+                        "rawLabel": f"{run_root.name}__blocks",
+                        "kind": "single",
+                    }
+                ]
+                if block_debug_dir.is_dir()
+                else []
+            ),
         ],
         "collectionKind": "single",
         "collectionLabel": "当前视图",
-        "showCollectionSelector": False,
+        "showCollectionSelector": block_debug_dir.is_dir(),
         "groups": groups,
     }
 
@@ -179,14 +248,20 @@ def load_run_graph(
         raise DagViewerError(f"Run 目录不兼容或不存在: {run_root}")
 
     expected_method = safe_component(run_root.name)
-    if method and method != expected_method:
+    debug_method = _block_debug_method(run_root)
+    is_block_debug = method == debug_method
+    if method and method not in {expected_method, debug_method}:
         raise DagViewerError(f"方法不存在: {method}")
 
-    group_dir = run_root / "dags" / safe_component(group_key)
+    group_dir = (
+        run_root / "blocks" / "block_dags" / safe_component(group_key)
+        if is_block_debug
+        else run_root / "dags" / safe_component(group_key)
+    )
     if not group_dir.is_dir():
         raise DagViewerError(f"group 目录不存在: {group_dir}")
 
-    node_map = load_node_map(run_root)
+    node_map = _load_block_node_map(run_root, group_key) if is_block_debug else load_node_map(run_root)
     if mode == "single":
         if result_id is None:
             raise DagViewerError("单细胞模式必须提供 resultId。")
@@ -197,10 +272,14 @@ def load_run_graph(
         return _serialize_graph(
             graph=_normalize_graph(graph, node_map),
             mode="single",
-            method=expected_method,
+            method=debug_method if is_block_debug else expected_method,
             group_key=group_key,
             result_id=result_id,
-            cell_run_id=_resolve_cell_run_id(run_root, group_key, result_id),
+            cell_run_id=(
+                _resolve_block_run_id(run_root, group_key, result_id)
+                if is_block_debug
+                else _resolve_cell_run_id(run_root, group_key, result_id)
+            ),
         )
 
     if mode != "consensus":
@@ -242,7 +321,7 @@ def load_run_graph(
     return _serialize_graph(
         graph=consensus_graph,
         mode="consensus",
-        method=expected_method,
+        method=debug_method if is_block_debug else expected_method,
         group_key=group_key,
         threshold=metadata.get("threshold"),
         num_dags=metadata.get("num_dags"),

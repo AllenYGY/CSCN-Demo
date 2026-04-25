@@ -29,6 +29,20 @@ def _as_list(value: Any) -> list[str] | None:
     return value
 
 
+def _as_string_list(
+    mapping: dict[str, Any],
+    key: str,
+    *,
+    default: list[str] | None = None,
+) -> list[str]:
+    value = mapping.get(key, default)
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ConfigError(f"`{key}` must be a list of strings.")
+    return [str(item).strip() for item in value]
+
+
 def _get_string(
     mapping: dict[str, Any],
     key: str,
@@ -124,6 +138,23 @@ class SpatialConfig:
     bandwidth: float | None = None
     lambda_expr: float = 0.2
     min_effective_neighbors: int = 15
+    block_generator: str = "density_cluster_bbox"
+    assignment: str = "nearest_block"
+    local_subset: str = "block_plus_halo"
+    prior_mode: str = "skeleton_only"
+    aggregation_modes: list[str] = field(
+        default_factory=lambda: ["sum_then_normalize", "mean"]
+    )
+    default_aggregation: str = "sum_then_normalize"
+    block_gene_top_n: int = 50
+    min_cells_per_block: int = 5
+    halo_neighbor_blocks: int = 1
+    block_overlap_min: float = 0.25
+    prior_consensus_threshold: str | int = "auto"
+    fallback_to_local_knn_subset: bool = True
+    density_clustering: dict[str, Any] = field(
+        default_factory=lambda: {"eps": 1.5, "min_samples": 2}
+    )
 
 
 @dataclass(frozen=True)
@@ -275,11 +306,43 @@ def load_config(config_path: str | Path) -> CSCNConfig:
             bandwidth=_get_optional_float(spatial_raw, "bandwidth"),
             lambda_expr=float(spatial_raw.get("lambda_expr", 0.2)),
             min_effective_neighbors=int(spatial_raw.get("min_effective_neighbors", 15)),
+            block_generator=str(spatial_raw.get("block_generator") or "density_cluster_bbox")
+            .strip()
+            .lower(),
+            assignment=str(spatial_raw.get("assignment") or "nearest_block").strip().lower(),
+            local_subset=str(spatial_raw.get("local_subset") or "block_plus_halo")
+            .strip()
+            .lower(),
+            prior_mode=str(spatial_raw.get("prior_mode") or "skeleton_only").strip().lower(),
+            aggregation_modes=_as_string_list(
+                spatial_raw,
+                "aggregation_modes",
+                default=["sum_then_normalize", "mean"],
+            ),
+            default_aggregation=str(
+                spatial_raw.get("default_aggregation") or "sum_then_normalize"
+            )
+            .strip()
+            .lower(),
+            block_gene_top_n=int(spatial_raw.get("block_gene_top_n") or 50),
+            min_cells_per_block=int(spatial_raw.get("min_cells_per_block") or 5),
+            halo_neighbor_blocks=int(spatial_raw.get("halo_neighbor_blocks") or 1),
+            block_overlap_min=float(spatial_raw.get("block_overlap_min", 0.25)),
+            prior_consensus_threshold=spatial_raw.get("prior_consensus_threshold", "auto"),
+            fallback_to_local_knn_subset=bool(
+                spatial_raw.get("fallback_to_local_knn_subset", True)
+            ),
+            density_clustering=dict(spatial_raw.get("density_clustering") or {}),
         ),
     )
-    if run.spatial.strategy not in {"weighted_counts", "local_knn_subset"}:
+    if run.spatial.strategy not in {
+        "weighted_counts",
+        "local_knn_subset",
+        "adaptive_block_prior",
+    }:
         raise ConfigError(
-            "`run.spatial.strategy` must be `weighted_counts` or `local_knn_subset`."
+            "`run.spatial.strategy` must be `weighted_counts`, `local_knn_subset`, or "
+            "`adaptive_block_prior`."
         )
     if run.spatial.mode not in {"knn", "radius"}:
         raise ConfigError("`run.spatial.mode` must be `knn` or `radius`.")
@@ -291,6 +354,52 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         raise ConfigError("`run.spatial.lambda_expr` must be between 0 and 1.")
     if run.spatial.min_effective_neighbors <= 0:
         raise ConfigError("`run.spatial.min_effective_neighbors` must be positive.")
+    allowed_aggregation_modes = {"sum_then_normalize", "mean"}
+    if not run.spatial.aggregation_modes:
+        raise ConfigError("`run.spatial.aggregation_modes` must include at least one mode.")
+    if any(mode not in allowed_aggregation_modes for mode in run.spatial.aggregation_modes):
+        raise ConfigError(
+            "`run.spatial.aggregation_modes` must only contain `sum_then_normalize` or `mean`."
+        )
+    if run.spatial.default_aggregation not in allowed_aggregation_modes:
+        raise ConfigError(
+            "`run.spatial.default_aggregation` must be `sum_then_normalize` or `mean`."
+        )
+    if run.spatial.default_aggregation not in run.spatial.aggregation_modes:
+        raise ConfigError(
+            "`run.spatial.default_aggregation` must appear in `run.spatial.aggregation_modes`."
+        )
+    if run.spatial.block_gene_top_n <= 0:
+        raise ConfigError("`run.spatial.block_gene_top_n` must be positive.")
+    if run.spatial.min_cells_per_block <= 0:
+        raise ConfigError("`run.spatial.min_cells_per_block` must be positive.")
+    if run.spatial.halo_neighbor_blocks < 0:
+        raise ConfigError("`run.spatial.halo_neighbor_blocks` must be non-negative.")
+    if not 0 <= run.spatial.block_overlap_min < 1:
+        raise ConfigError("`run.spatial.block_overlap_min` must be in [0, 1).")
+    if not (
+        isinstance(run.spatial.prior_consensus_threshold, str)
+        or isinstance(run.spatial.prior_consensus_threshold, Integral)
+    ):
+        raise ConfigError(
+            "`run.spatial.prior_consensus_threshold` must be `auto` or an integer."
+        )
+    if run.spatial.block_generator != "density_cluster_bbox":
+        raise ConfigError(
+            "`run.spatial.block_generator` currently only supports `density_cluster_bbox`."
+        )
+    if run.spatial.assignment != "nearest_block":
+        raise ConfigError("`run.spatial.assignment` currently only supports `nearest_block`.")
+    if run.spatial.local_subset != "block_plus_halo":
+        raise ConfigError("`run.spatial.local_subset` currently only supports `block_plus_halo`.")
+    if run.spatial.prior_mode != "skeleton_only":
+        raise ConfigError("`run.spatial.prior_mode` currently only supports `skeleton_only`.")
+    density_eps = float((run.spatial.density_clustering or {}).get("eps", 1.5))
+    density_min_samples = int((run.spatial.density_clustering or {}).get("min_samples", 2))
+    if density_eps <= 0:
+        raise ConfigError("`run.spatial.density_clustering.eps` must be positive.")
+    if density_min_samples <= 0:
+        raise ConfigError("`run.spatial.density_clustering.min_samples` must be positive.")
     if run.spatial.enabled and run.spatial.mode == "radius" and (
         run.spatial.radius is None or run.spatial.radius <= 0
     ):
@@ -303,6 +412,19 @@ def load_config(config_path: str | Path) -> CSCNConfig:
         if run.spatial.mode != "knn":
             raise ConfigError(
                 "`run.spatial.strategy=local_knn_subset` currently requires `run.spatial.mode=knn`."
+            )
+    if run.spatial.enabled and run.spatial.strategy == "adaptive_block_prior":
+        if not input_config.spatial_x_key or not input_config.spatial_y_key:
+            raise ConfigError(
+                "`run.spatial.strategy=adaptive_block_prior` requires spatial coordinate keys."
+            )
+        if input_config.spatial_z_key:
+            raise ConfigError(
+                "`run.spatial.strategy=adaptive_block_prior` currently supports only 2D coordinates."
+            )
+        if run.using_nmf:
+            raise ConfigError(
+                "`run.using_nmf=true` is not supported with `run.spatial.strategy=adaptive_block_prior`."
             )
 
     aggregate_raw = raw.get("aggregate") or {}

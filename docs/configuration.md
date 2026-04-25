@@ -489,7 +489,7 @@ max(2, ceil(0.05 * num_dags))
 例如配置位于：
 
 ```text
-examples/GSE121893/config.yaml
+configs/GSE121893/config.yaml
 ```
 
 那么：

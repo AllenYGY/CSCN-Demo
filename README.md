@@ -40,22 +40,22 @@ cd ../..
 准备并运行一个配置：
 
 ```bash
-cscn run-all --config examples/GSE121893/config.yaml
+cscn run-all --config configs/GSE121893/config.yaml
 ```
 
 分步运行：
 
 ```bash
-cscn prepare --config examples/GSE121893/config.yaml
-cscn run --config examples/GSE121893/config.yaml
-cscn aggregate --config examples/GSE121893/config.yaml
-cscn biomarker --config examples/GSE121893/config.yaml
+cscn prepare --config configs/GSE121893/config.yaml
+cscn run --config configs/GSE121893/config.yaml
+cscn aggregate --config configs/GSE121893/config.yaml
+cscn biomarker --config configs/GSE121893/config.yaml
 ```
 
 启动 viewer：
 
 ```bash
-cscn viewer --config examples/GSE121893/config.yaml
+cscn viewer --config configs/GSE121893/config.yaml
 ```
 
 ## Supported Inputs
@@ -103,20 +103,20 @@ runs/<run_name>/
 - `src/cscn/`: 正式主实现
 - `src/biomarker/`: 现有 biomarker 与旧 viewer 兼容实现
 - `apps/dag-viewer/`: DAG viewer 前端
-- `examples/`: 新 CLI/config 的示例配置
+- `configs/`: 新 CLI/config 的配置模板
 - `docs/`: 使用与设计文档
 - `scripts/biomarker/`: 旧的、数据集定制化脚本，保留作参考
 - `legacy/`: 历史实验与旧实现
 
 ## Legacy Notes
 
-仓库里仍然保留 `scripts/biomarker/Biomarker_GSE121893.py`、`scripts/biomarker/Biomarker_GSE138852.py` 这类旧脚本，但它们不再是正式主入口。根目录下同名脚本现在只是兼容 shim，会转发到 `cscn run-all --config examples/.../config.yaml`。
+仓库里仍然保留 `scripts/biomarker/Biomarker_GSE121893.py`、`scripts/biomarker/Biomarker_GSE138852.py` 这类旧脚本，但它们不再是正式主入口。根目录下同名脚本现在只是兼容 shim，会转发到 `cscn run-all --config configs/.../config.yaml`。
 
 新的开发和新数据集接入，应该优先使用：
 
 - `src/cscn/`
 - `cscn` CLI
-- `examples/` 里的配置模板
+- `configs/` 里的配置模板
 
 ## Docs
 
@@ -124,4 +124,4 @@ runs/<run_name>/
 - [Configuration](docs/configuration.md)
 - [Design And Development](docs/design_and_development.md)
 - [DAG Viewer](docs/dag_viewer.md)
-- [Examples](examples/README.md)
+- [Configs](configs/README.md)
