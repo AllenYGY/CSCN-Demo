@@ -21,6 +21,7 @@ from cscn.layout import RunLayout
 from cscn.postprocess import run_ckm
 from cscn.viewer import discover_run_roots, load_run_graph, scan_run_root
 from cscn.workflow import aggregate_run, load_prepared_run, prepare_run, run_biomarker_workflow, run_cscn
+from scripts.analysis.compare_seqfish_ckm_clustering import run_analysis
 from tests.support.fake_graph import FakeGraph
 
 
@@ -534,6 +535,67 @@ def test_run_ckm_writes_ckm_matrix(tmp_path):
     assert (layout.ckm_dir / "A_ckm.npy").is_file()
 
 
+def test_compare_seqfish_ckm_clustering_script_outputs_tables(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+
+    weighted_config_path = build_table_config(
+        tmp_path / "weighted",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+    )
+    local_config_path = build_table_config(
+        tmp_path / "local",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: local_knn_subset",
+            "    mode: knn",
+            "    k: 2",
+            "    kernel: gaussian",
+            "    lambda_expr: 0.0",
+            "    min_effective_neighbors: 1",
+        ],
+    )
+
+    weighted_config = load_config(weighted_config_path)
+    local_config = load_config(local_config_path)
+    prepare_run(weighted_config)
+    prepare_run(local_config)
+    run_cscn(weighted_config)
+    run_cscn(local_config)
+
+    weighted_layout = RunLayout.from_config(weighted_config)
+    local_layout = RunLayout.from_config(local_config)
+    output_dir = tmp_path / "analysis"
+    run_analysis(
+        expr_path=Path(weighted_config_path).parent / "expression.csv",
+        metadata_path=Path(weighted_config_path).parent / "metadata.csv",
+        weighted_run_dir=weighted_layout.run_dir,
+        local_knn_run_dir=local_layout.run_dir,
+        output_dir=output_dir,
+        enable_umap=False,
+    )
+
+    metrics = pd.read_csv(output_dir / "clustering_metrics.csv")
+    assignments = pd.read_csv(output_dir / "cell_assignments.csv")
+    assert set(metrics["representation"]) == {"expr", "ckm_weighted", "ckm_local_knn"}
+    assert assignments.columns.tolist() == [
+        "cell_id",
+        "cell_class_name",
+        "expr_cluster",
+        "ckm_weighted_cluster",
+        "ckm_local_knn_cluster",
+    ]
+    assert (output_dir / "expr_features.csv").is_file()
+    assert (output_dir / "ckm_weighted_features.csv").is_file()
+    assert (output_dir / "ckm_local_knn_features.csv").is_file()
+
+
 def build_table_config(
     tmp_path: Path,
     *,
@@ -562,19 +624,19 @@ def build_table_config(
         "\n".join(
             (
                 [
-                    "cell_id,condition,array_row,array_col",
-                    "c1,A,0,0",
-                    "c2,A,1,0",
-                    "c3,B,0,1",
-                    "c4,B,1,1",
+                    "cell_id,condition,cell_class_name,array_row,array_col",
+                    "c1,A,A,0,0",
+                    "c2,A,A,1,0",
+                    "c3,B,B,0,1",
+                    "c4,B,B,1,1",
                 ]
                 if include_spatial
                 else [
-                    "cell_id,condition",
-                    "c1,A",
-                    "c2,A",
-                    "c3,B",
-                    "c4,B",
+                    "cell_id,condition,cell_class_name",
+                    "c1,A,A",
+                    "c2,A,A",
+                    "c3,B,B",
+                    "c4,B,B",
                 ]
             )
         )
