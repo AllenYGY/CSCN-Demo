@@ -38,6 +38,6 @@ result-interpreter/
 runs/
 
 # Local Codex metadata
-.codex/*
+.codex/
 legacy/*
 docs/others/*
