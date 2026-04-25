@@ -138,6 +138,54 @@ def load_gse131907_grouped_cells(annotation_path, group_filters):
     return cells_by_group, summary_by_group
 
 
+def load_gse132465_grouped_cells(annotation_path, group_filters):
+    annotation_df = pd.read_csv(annotation_path, sep="\t")
+    required_columns = {"Index", "Patient", "Class", "Sample", "Cell_type", "Cell_subtype"}
+    missing_columns = required_columns - set(annotation_df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Missing required annotation columns in {annotation_path}: {sorted(missing_columns)}"
+        )
+
+    cells_by_group = {}
+    summary_by_group = {}
+    for group, filters in group_filters.items():
+        mask = pd.Series(True, index=annotation_df.index)
+
+        class_labels = filters.get("class_labels")
+        if class_labels:
+            mask &= annotation_df["Class"].isin(class_labels)
+
+        patients = filters.get("patients")
+        if patients:
+            mask &= annotation_df["Patient"].isin(patients)
+
+        samples = filters.get("samples")
+        if samples:
+            mask &= annotation_df["Sample"].isin(samples)
+
+        cell_types = filters.get("cell_types")
+        if cell_types:
+            mask &= annotation_df["Cell_type"].isin(cell_types)
+
+        cell_subtypes = filters.get("cell_subtypes")
+        if cell_subtypes:
+            mask &= annotation_df["Cell_subtype"].isin(cell_subtypes)
+
+        selected_df = annotation_df.loc[mask].copy()
+        cells_by_group[group] = selected_df["Index"].astype(str).tolist()
+        summary_by_group[group] = {
+            "total_cells": int(selected_df.shape[0]),
+            "patient_counts": selected_df["Patient"].value_counts().to_dict(),
+            "sample_counts": selected_df["Sample"].value_counts().to_dict(),
+            "class_counts": selected_df["Class"].value_counts().to_dict(),
+            "cell_type_counts": selected_df["Cell_type"].value_counts().to_dict(),
+            "cell_subtype_counts": selected_df["Cell_subtype"].value_counts().to_dict(),
+        }
+
+    return cells_by_group, summary_by_group
+
+
 def sample_cells_by_group(cells_by_group, sample_size, random_seed):
     rng = np.random.default_rng(random_seed)
     sampled_cells = {}
