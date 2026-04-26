@@ -46,25 +46,47 @@ def add_suffix(barcodes: list[str], suffix: str) -> list[str]:
         return barcodes
     return [b if b.endswith(f"_{suffix}") else f"{b}_{suffix}" for b in barcodes]
 
+def resolve_10x_triplet(root: Path):
+    files = {path.name: path for path in root.iterdir() if path.is_file()}
+    if {"matrix.mtx.gz", "features.tsv.gz", "barcodes.tsv.gz"} <= set(files):
+        return {
+            "matrix": files["matrix.mtx.gz"],
+            "features": files["features.tsv.gz"],
+            "barcodes": files["barcodes.tsv.gz"],
+        }
+    for path in files.values():
+        name = path.name
+        if not name.endswith("_matrix.mtx.gz"):
+            continue
+        prefix = name[: -len("_matrix.mtx.gz")]
+        features = files.get(f"{prefix}_features.tsv.gz")
+        barcodes = files.get(f"{prefix}_barcodes.tsv.gz")
+        if features is not None and barcodes is not None:
+            return {"matrix": path, "features": features, "barcodes": barcodes}
+    return None
+
 candidates = []
 for root, _, files in os.walk(data / "expression"):
     root = Path(root)
-    files = set(files)
-    if {"matrix.mtx.gz", "features.tsv.gz", "barcodes.tsv.gz"} <= files:
-        candidates.append(root)
+    triplet = resolve_10x_triplet(root)
+    if triplet is not None:
+        candidates.append({"root": root, "triplet": triplet})
 
 if not candidates:
     raise SystemExit("No 10x expression folder found under data/SCP2046/expression")
 
 best = None
-for root in candidates:
-    raw_barcodes = read_barcodes(root / "barcodes.tsv.gz")
+for candidate in candidates:
+    root = candidate["root"]
+    triplet = candidate["triplet"]
+    raw_barcodes = read_barcodes(triplet["barcodes"])
     for suffix in ("1", "2", "3", "4", ""):
         cell_ids = add_suffix(raw_barcodes, suffix)
         overlap = len(set(cell_ids) & set(spatial_names))
         if best is None or overlap > best["overlap"]:
             best = {
                 "root": root,
+                "triplet": triplet,
                 "suffix": suffix,
                 "overlap": overlap,
                 "cell_ids": cell_ids,
@@ -73,7 +95,7 @@ for root in candidates:
 if best is None or best["overlap"] == 0:
     raise SystemExit("Could not match any expression folder to spatial_s1.csv")
 
-features = pd.read_csv(best["root"] / "features.tsv.gz", sep="\t", header=None)
+features = pd.read_csv(best["triplet"]["features"], sep="\t", header=None)
 if features.shape[1] >= 2:
     genes = features.iloc[:, 1].astype(str).fillna("")
     genes = genes.where(genes != "", features.iloc[:, 0].astype(str))
@@ -81,7 +103,7 @@ else:
     genes = features.iloc[:, 0].astype(str)
 genes = genes.tolist()
 
-with gzip.open(best["root"] / "matrix.mtx.gz", "rb") as handle:
+with gzip.open(best["triplet"]["matrix"], "rb") as handle:
     mat = mmread(handle).tocsr()
 
 id_to_col = {cid: i for i, cid in enumerate(best["cell_ids"])}
