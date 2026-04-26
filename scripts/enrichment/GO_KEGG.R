@@ -103,6 +103,30 @@ resolve_defaults <- function(dataset, data_dir) {
     ))
   }
 
+  if (dataset == "GSE115978") {
+    return(list(
+      biomarker_file = file.path(data_dir, "Biomarkers_GSE115978_malignant_treatment_naive_vs_post.csv"),
+      used_gene_file = file.path(data_dir, "output_deseq", "GSE115978_malignant_treatment_naive_vs_post_top150_genes_used.csv"),
+      run_name = "GSE115978_malignant_treatment_naive_vs_post"
+    ))
+  }
+
+  if (dataset == "GSE132465") {
+    return(list(
+      biomarker_file = file.path(data_dir, "Biomarkers_GSE132465_tumor_epithelial_vs_normal_epithelial.csv"),
+      used_gene_file = file.path(data_dir, "output_deseq", "GSE132465_tumor_epithelial_vs_normal_epithelial_top10_genes_used.csv"),
+      run_name = "GSE132465_tumor_epithelial_vs_normal_epithelial"
+    ))
+  }
+
+  if (dataset == "GSE159115") {
+    return(list(
+      biomarker_file = file.path(data_dir, "Biomarkers_GSE159115_ccrcc_tumor_vs_ptb_ptc_normal.csv"),
+      used_gene_file = file.path(data_dir, "output_deseq", "GSE159115_ccrcc_tumor_vs_ptb_ptc_normal_top150_genes_used.csv"),
+      run_name = "GSE159115_ccrcc_tumor_vs_ptb_ptc_normal"
+    ))
+  }
+
   return(list(
     biomarker_file = file.path(data_dir, "Biomarkers.csv"),
     used_gene_file = file.path(data_dir, "output_deseq", sprintf("%s_top150_genes_used.csv", dataset)),
