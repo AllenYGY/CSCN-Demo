@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import os
-import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from scipy.sparse import csc_matrix
+import h5py
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "src"
@@ -22,6 +26,8 @@ DEFAULT_SAMPLE_SIZE = 100
 DEFAULT_RANDOM_SEED = 42
 DEFAULT_MAX_WORKERS = min(8, os.cpu_count() or 1)
 DEFAULT_USE_BITMAP = True
+TUMOR_ANNOS = {"Tumor"}
+NORMAL_ANNOS = {"PT-B", "PT-C"}
 
 
 def log(message):
@@ -52,6 +58,228 @@ def validate_required_file(path: Path, description: str):
 
 def default_gene_list_path(output_dir: Path):
     return output_dir / "deseq2_ccrcc_tumor_vs_ptb_ptc_normal_top150_genes.csv"
+
+
+def read_annotation_table(annotation_path: Path, disease: str, allowed_annos):
+    import csv
+    from collections import Counter
+
+    rows = []
+    summary = {
+        "total_cells": 0,
+        "patient_counts": Counter(),
+        "sample_counts": Counter(),
+        "anno_counts": Counter(),
+    }
+
+    with gzip.open(annotation_path, "rt", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"cell", "sample", "anno", "patient", "doublet"}
+        missing = required - set(reader.fieldnames or ())
+        if missing:
+            raise ValueError(f"Missing required columns in {annotation_path}: {sorted(missing)}")
+
+        for row in reader:
+            if row["anno"] not in allowed_annos:
+                continue
+            if row["doublet"] != "FALSE":
+                continue
+            item = {
+                "cell": row["cell"],
+                "sample": row["sample"],
+                "patient": row["patient"],
+                "anno": row["anno"],
+                "disease": disease,
+                "group": disease,
+            }
+            rows.append(item)
+            summary["total_cells"] += 1
+            summary["patient_counts"][row["patient"]] += 1
+            summary["sample_counts"][row["sample"]] += 1
+            summary["anno_counts"][row["anno"]] += 1
+
+    return rows, summary
+
+
+def select_paired_grouped_cells(ccrcc_annotation_path: Path, normal_annotation_path: Path):
+    tumor_rows, tumor_summary = read_annotation_table(ccrcc_annotation_path, "tumor", TUMOR_ANNOS)
+    normal_rows, normal_summary = read_annotation_table(normal_annotation_path, "normal", NORMAL_ANNOS)
+
+    tumor_patients = {row["patient"] for row in tumor_rows}
+    normal_patients = {row["patient"] for row in normal_rows}
+    paired_patients = sorted(tumor_patients & normal_patients)
+
+    tumor_rows = [row for row in tumor_rows if row["patient"] in paired_patients]
+    normal_rows = [row for row in normal_rows if row["patient"] in paired_patients]
+
+    grouped_cells = {
+        "tumor": [row["cell"] for row in tumor_rows],
+        "normal": [row["cell"] for row in normal_rows],
+    }
+    from collections import Counter
+
+    filtered_tumor_samples = Counter(row["sample"] for row in tumor_rows)
+    filtered_tumor_annos = Counter(row["anno"] for row in tumor_rows)
+    filtered_tumor_patients = Counter(row["patient"] for row in tumor_rows)
+    filtered_normal_samples = Counter(row["sample"] for row in normal_rows)
+    filtered_normal_annos = Counter(row["anno"] for row in normal_rows)
+    filtered_normal_patients = Counter(row["patient"] for row in normal_rows)
+    summary_by_group = {
+        "tumor": {
+            "total_cells": len(tumor_rows),
+            "patient_counts": filtered_tumor_patients,
+            "sample_counts": filtered_tumor_samples,
+            "anno_counts": filtered_tumor_annos,
+            "paired_patients": paired_patients,
+        },
+        "normal": {
+            "total_cells": len(normal_rows),
+            "patient_counts": filtered_normal_patients,
+            "sample_counts": filtered_normal_samples,
+            "anno_counts": filtered_normal_annos,
+            "paired_patients": paired_patients,
+        },
+    }
+    return grouped_cells, summary_by_group
+
+
+def log_group_summary(summary_by_group):
+    for group, summary in summary_by_group.items():
+        log(f"eligible cells for {group}: {summary['total_cells']}")
+        sample_counts = summary["sample_counts"]
+        if sample_counts:
+            preview = ", ".join(
+                f"{name}={count}"
+                for name, count in sorted(sample_counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+            )
+            log(f"{group} sample counts: {preview}")
+        anno_counts = summary["anno_counts"]
+        if anno_counts:
+            preview = ", ".join(
+                f"{name}={count}"
+                for name, count in sorted(anno_counts.items(), key=lambda item: (-item[1], item[0]))
+            )
+            log(f"{group} anno counts: {preview}")
+        paired = summary.get("paired_patients")
+        if paired:
+            log(f"{group} paired patients: {', '.join(paired)}")
+
+
+def sample_cells_by_group(cells_by_group, sample_size, random_seed):
+    rng = np.random.default_rng(random_seed)
+    sampled_cells = {}
+    for group, cell_ids in cells_by_group.items():
+        if len(cell_ids) < sample_size:
+            raise ValueError(
+                f"Group {group} has only {len(cell_ids)} eligible cells, fewer than sample size {sample_size}."
+            )
+        sampled = rng.choice(np.array(cell_ids), size=sample_size, replace=False)
+        sampled_cells[group] = sampled.tolist()
+    return sampled_cells
+
+
+def extract_h5_cache(raw_tar_path: Path):
+    out_dir = raw_tar_path.parent / ".gse159115_h5_cache_py"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    h5_files = sorted(out_dir.glob("*.h5"))
+    if not h5_files:
+        with tarfile.open(raw_tar_path) as tf:
+            tf.extractall(out_dir)
+        h5_files = sorted(out_dir.glob("*.h5"))
+    if not h5_files:
+        raise FileNotFoundError(f"No .h5 files found after extracting {raw_tar_path}")
+    sample_to_h5 = {}
+    for path in h5_files:
+        sample = path.name.split("_filtered_gene_bc_matrices_h5.h5")[0].split("_", 1)[1]
+        sample_to_h5[sample] = path
+    return sample_to_h5
+
+
+def split_sample_barcode(cell_id: str):
+    parts = cell_id.split("_", 2)
+    if len(parts) != 3:
+        raise ValueError(f"Unexpected GSE159115 cell id format: {cell_id}")
+    return f"{parts[0]}_{parts[1]}", parts[2]
+
+
+def read_10x_h5_old(h5_path: Path):
+    with h5py.File(h5_path, "r") as h5:
+        root_name = next(iter(h5.keys()))
+        grp = h5[root_name]
+        gene_names = [x.decode() if isinstance(x, bytes) else str(x) for x in grp["gene_names"][()]]
+        barcodes = [x.decode() if isinstance(x, bytes) else str(x) for x in grp["barcodes"][()]]
+        indices = grp["indices"][()]
+        indptr = grp["indptr"][()]
+        data = grp["data"][()]
+        shape = tuple(int(x) for x in grp["shape"][()])
+    mat = csc_matrix((data, indices, indptr), shape=shape)
+    return gene_names, barcodes, mat
+
+
+def extract_sampled_expression_from_h5(raw_tar_path: Path, sampled_cells, top_genes):
+    sample_to_h5 = extract_h5_cache(raw_tar_path)
+    top_genes = list(top_genes)
+    matrices = {group: None for group in sampled_cells}
+    used_genes = None
+
+    for group, cell_ids in sampled_cells.items():
+        by_sample = {}
+        for cell_id in cell_ids:
+            sample_id, barcode = split_sample_barcode(cell_id)
+            by_sample.setdefault(sample_id, []).append((cell_id, barcode))
+
+        group_blocks = []
+        for sample_id, pairs in by_sample.items():
+            h5_path = sample_to_h5.get(sample_id)
+            if h5_path is None:
+                raise FileNotFoundError(f"No H5 file found for sample {sample_id}")
+            gene_names, barcodes, mat = read_10x_h5_old(h5_path)
+            barcode_to_col = {barcode: idx for idx, barcode in enumerate(barcodes)}
+
+            selected_cols = []
+            ordered_cells = []
+            for cell_id, barcode in pairs:
+                col_idx = barcode_to_col.get(barcode)
+                if col_idx is None:
+                    raise ValueError(f"Missing cell barcode {barcode} in sample {sample_id}")
+                selected_cols.append(col_idx)
+                ordered_cells.append(cell_id)
+
+            selected_cols = np.array(selected_cols, dtype=int)
+            totals = np.asarray(mat[:, selected_cols].sum(axis=0)).ravel().astype(np.float64)
+            totals[totals == 0] = 1.0
+
+            gene_to_rows = {}
+            for idx, gene in enumerate(gene_names):
+                if gene in top_genes:
+                    gene_to_rows.setdefault(gene, []).append(idx)
+
+            if used_genes is None:
+                used_genes = [gene for gene in top_genes if gene in gene_to_rows]
+                if not used_genes:
+                    raise ValueError("None of the requested top genes were found in the GSE159115 h5 files.")
+
+            block = np.zeros((len(selected_cols), len(used_genes)), dtype=np.float64)
+            for gene_pos, gene in enumerate(used_genes):
+                rows = gene_to_rows.get(gene)
+                if not rows:
+                    continue
+                vec = np.asarray(mat[rows, :][:, selected_cols].sum(axis=0)).ravel()
+                block[:, gene_pos] = vec
+
+            block = np.log1p((block / totals[:, None]) * 1e6)
+            group_blocks.append((ordered_cells, block))
+
+        ordered = []
+        arrays = []
+        for ordered_cells, block in group_blocks:
+            ordered.extend(ordered_cells)
+            arrays.append(block)
+        matrices[group] = (ordered, np.vstack(arrays))
+
+    sampled_cell_order = {group: cells for group, (cells, _) in matrices.items()}
+    matrix_values = {group: arr for group, (_, arr) in matrices.items()}
+    return sampled_cell_order, matrix_values, used_genes
 
 
 def parse_args():
@@ -146,41 +374,16 @@ def run_group_cscn(data_dir: Path, run_name: str, group: str, matrix, max_worker
     log(f"DAG files written for {group}: {dag_count}")
 
 
-def prepare_expression_inputs(data_dir: Path, gene_list_path: Path, sample_size: int, random_seed: int, run_name: str):
-    helper_path = REPO_ROOT / "scripts" / "biomarker" / "prepare_GSE159115_expression.R"
-    cmd = [
-        "Rscript",
-        str(helper_path),
-        "--data-dir",
-        str(data_dir),
-        "--gene-list-path",
-        str(gene_list_path),
-        "--sample-size",
-        str(sample_size),
-        "--random-seed",
-        str(random_seed),
-        "--run-name",
-        run_name,
-    ]
-    log("preparing sampled expression matrices via R helper")
-    subprocess.run(cmd, check=True)
-
-
-def load_group_matrix(path: Path):
-    df = pd.read_csv(path)
-    if "cell_id" not in df.columns:
-        raise ValueError(f"Missing cell_id column in {path}")
-    gene_columns = [column for column in df.columns if column != "cell_id"]
-    matrix = df[gene_columns].to_numpy(dtype=float)
-    cell_ids = df["cell_id"].astype(str).tolist()
-    return cell_ids, gene_columns, matrix
-
-
 def main():
     args = parse_args()
 
     from biomarker.causal import run_causal_analysis
-    from biomarker.datasets import build_expression_df, load_saved_group_graphs, save_prepared_inputs
+    from biomarker.datasets import (
+        build_expression_df,
+        load_gene_names,
+        load_saved_group_graphs,
+        save_prepared_inputs,
+    )
     from biomarker.graph_utils import (
         get_global_graph,
         identify_biomarkers_from_group_graphs,
@@ -190,6 +393,9 @@ def main():
 
     data_dir = args.data_dir.resolve()
     output_dir = data_dir / "output_deseq"
+    raw_tar_path = data_dir / "GSE159115_RAW.tar"
+    ccrcc_annotation_path = data_dir / "GSE159115_ccRCC_anno.csv.gz"
+    normal_annotation_path = data_dir / "GSE159115_normal_anno.csv.gz"
     gene_list_path = (
         args.gene_list_path.resolve()
         if args.gene_list_path is not None
@@ -206,37 +412,35 @@ def main():
     log(f"random seed: {args.random_seed}")
     log(f"max workers: {args.max_workers}")
     log(f"prepare only: {args.prepare_only}")
+    validate_required_file(raw_tar_path, "RAW tar")
+    validate_required_file(ccrcc_annotation_path, "ccRCC annotation")
+    validate_required_file(normal_annotation_path, "normal annotation")
     validate_required_file(gene_list_path, "top-gene list")
 
-    prepare_expression_inputs(
-        data_dir=data_dir,
-        gene_list_path=gene_list_path,
+    log_stage("Load Inputs")
+    top_genes = load_gene_names(gene_list_path)
+    grouped_cells, summary_by_group = select_paired_grouped_cells(
+        ccrcc_annotation_path=ccrcc_annotation_path,
+        normal_annotation_path=normal_annotation_path,
+    )
+    log_group_summary(summary_by_group)
+
+    log_stage("Sample Cells")
+    sampled_cells = sample_cells_by_group(
+        grouped_cells,
         sample_size=args.sample_size,
         random_seed=args.random_seed,
-        run_name=run_name,
     )
+    for group, cell_ids in sampled_cells.items():
+        log(f"sampled cells for {group}: {len(cell_ids)}")
+        log(f"first 3 sampled {group} cells: {cell_ids[:3]}")
 
-    normal_expr_path = output_dir / f"{run_name}_normal_expression.csv.gz"
-    tumor_expr_path = output_dir / f"{run_name}_tumor_expression.csv.gz"
-    used_gene_paths = sorted(output_dir.glob(f"{run_name}_top*_genes_used.csv"))
-    if len(used_gene_paths) != 1:
-        raise FileNotFoundError(
-            f"Expected exactly one used-gene file for {run_name}, found {len(used_gene_paths)}"
-        )
-    used_genes_path = used_gene_paths[0]
-
-    validate_required_file(normal_expr_path, "prepared normal expression matrix")
-    validate_required_file(tumor_expr_path, "prepared tumor expression matrix")
-    validate_required_file(used_genes_path, "used-gene list")
-
-    log_stage("Load Prepared Matrices")
-    normal_cells, normal_genes, normal_matrix = load_group_matrix(normal_expr_path)
-    tumor_cells, tumor_genes, tumor_matrix = load_group_matrix(tumor_expr_path)
-    if normal_genes != tumor_genes:
-        raise ValueError("Normal and tumor prepared matrices use different gene columns")
-    used_genes = normal_genes
-    matrices = {"normal": normal_matrix, "tumor": tumor_matrix}
-    sampled_cells = {"normal": normal_cells, "tumor": tumor_cells}
+    log_stage("Extract Expression")
+    sampled_cells, matrices, used_genes = extract_sampled_expression_from_h5(
+        raw_tar_path=raw_tar_path,
+        sampled_cells=sampled_cells,
+        top_genes=top_genes,
+    )
 
     for group, matrix in matrices.items():
         log(
@@ -251,7 +455,7 @@ def main():
         sampled_cells=sampled_cells,
         matrices=matrices,
         used_genes=used_genes,
-        used_genes_filename=used_genes_path.name,
+        used_genes_filename=f"{run_name}_top{len(used_genes)}_genes_used.csv",
     )
 
     if args.prepare_only:

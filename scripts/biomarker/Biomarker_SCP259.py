@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +22,14 @@ DEFAULT_SAMPLE_SIZE = 4000
 DEFAULT_RANDOM_SEED = 42
 DEFAULT_MAX_WORKERS = min(8, os.cpu_count() or 1)
 DEFAULT_USE_BITMAP = True
+CRYPT_PROLIF_CLUSTERS = {
+    "Stem",
+    "Cycling TA",
+    "TA 1",
+    "TA 2",
+    "Enterocyte Progenitors",
+    "Secretory TA",
+}
 
 
 def log(message):
@@ -52,6 +60,181 @@ def validate_required_file(path: Path, description: str):
 
 def default_gene_list_path(output_dir: Path):
     return output_dir / "deseq2_inflamed_vs_healthy_crypt_prolif_epi_top150_genes.csv"
+
+
+def read_scp259_metadata_rows(metadata_path: Path):
+    import csv
+    from collections import Counter
+
+    grouped = {"healthy": [], "inflamed": []}
+    summary = {
+        "healthy": {"total_cells": 0, "subject_counts": Counter(), "sample_counts": Counter(), "cluster_counts": Counter()},
+        "inflamed": {"total_cells": 0, "subject_counts": Counter(), "sample_counts": Counter(), "cluster_counts": Counter()},
+    }
+
+    with open(metadata_path, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        required = {"NAME", "Cluster", "Subject", "Health", "Location", "Sample"}
+        missing = required - set(reader.fieldnames or ())
+        if missing:
+            raise ValueError(f"Missing required metadata columns in {metadata_path}: {sorted(missing)}")
+
+        for row in reader:
+            if row["NAME"] == "TYPE":
+                continue
+            if row["Location"] != "Epi":
+                continue
+            if row["Cluster"] not in CRYPT_PROLIF_CLUSTERS:
+                continue
+            health = row["Health"]
+            if health == "Healthy":
+                group = "healthy"
+            elif health == "Inflamed":
+                group = "inflamed"
+            else:
+                continue
+
+            cell_id = row["NAME"]
+            grouped[group].append(cell_id)
+            info = summary[group]
+            info["total_cells"] += 1
+            info["subject_counts"][row["Subject"]] += 1
+            info["sample_counts"][row["Sample"]] += 1
+            info["cluster_counts"][row["Cluster"]] += 1
+
+    return grouped, summary
+
+
+def log_group_summary(summary_by_group):
+    for group, summary in summary_by_group.items():
+        log(f"eligible cells for {group}: {summary['total_cells']}")
+        sample_counts = summary["sample_counts"]
+        if sample_counts:
+            preview = ", ".join(
+                f"{name}={count}"
+                for name, count in sorted(sample_counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+            )
+            log(f"{group} sample counts: {preview}")
+        cluster_counts = summary["cluster_counts"]
+        if cluster_counts:
+            preview = ", ".join(
+                f"{name}={count}"
+                for name, count in sorted(cluster_counts.items(), key=lambda item: (-item[1], item[0]))
+            )
+            log(f"{group} cluster counts: {preview}")
+
+
+def sample_cells_by_group(cells_by_group, sample_size, random_seed):
+    rng = np.random.default_rng(random_seed)
+    sampled_cells = {}
+    for group, cell_ids in cells_by_group.items():
+        if len(cell_ids) < sample_size:
+            raise ValueError(
+                f"Group {group} has only {len(cell_ids)} eligible cells, fewer than sample size {sample_size}."
+            )
+        sampled = rng.choice(np.array(cell_ids), size=sample_size, replace=False)
+        sampled_cells[group] = sampled.tolist()
+    return sampled_cells
+
+
+def load_scp259_barcodes(barcodes_path: Path):
+    barcodes = []
+    with open(barcodes_path) as handle:
+        for line in handle:
+            value = line.strip()
+            if not value or value == "TYPE":
+                continue
+            barcodes.append(value)
+    return barcodes
+
+
+def load_scp259_genes(genes_path: Path):
+    genes = []
+    with open(genes_path) as handle:
+        for line in handle:
+            value = line.strip()
+            if value:
+                genes.append(value)
+    return genes
+
+
+def extract_scp259_sampled_expression(matrix_path: Path, barcodes_path: Path, genes_path: Path, sampled_cells, top_genes):
+    barcodes = load_scp259_barcodes(barcodes_path)
+    cell_to_col = {cell_id: idx + 1 for idx, cell_id in enumerate(barcodes)}
+
+    group_col_lookup = {}
+    for group, cell_ids in sampled_cells.items():
+        missing = [cell_id for cell_id in cell_ids if cell_id not in cell_to_col]
+        if missing:
+            raise ValueError(
+                f"Missing sampled cells from barcodes file for group {group}: {missing[:5]}"
+            )
+        group_col_lookup[group] = [cell_to_col[cell_id] for cell_id in cell_ids]
+
+    genes = load_scp259_genes(genes_path)
+    gene_to_row = {}
+    for idx, gene in enumerate(genes, start=1):
+        if gene not in gene_to_row:
+            gene_to_row[gene] = idx
+
+    used_genes = [gene for gene in top_genes if gene in gene_to_row]
+    if not used_genes:
+        raise ValueError("None of the requested top genes were found in the SCP259 Epi matrix.")
+
+    row_target_map = {gene_to_row[gene]: pos for pos, gene in enumerate(used_genes)}
+
+    selected_col_map = {}
+    matrices = {}
+    totals = {}
+    for group, column_ids in group_col_lookup.items():
+        matrices[group] = np.zeros((len(column_ids), len(used_genes)), dtype=np.float64)
+        totals[group] = np.zeros(len(column_ids), dtype=np.float64)
+        for row_idx, col_idx in enumerate(column_ids):
+            selected_col_map[col_idx] = (group, row_idx)
+
+    log("streaming SCP259 Epi matrix to extract sampled cells and top genes; this can take a while")
+    with open(matrix_path) as handle:
+        first = handle.readline().strip()
+        if not first.startswith("%%MatrixMarket"):
+            raise ValueError(f"Unexpected Matrix Market header in {matrix_path}: {first}")
+
+        dims_line = None
+        for line in handle:
+            if not line.startswith("%"):
+                dims_line = line.strip()
+                break
+        if dims_line is None:
+            raise ValueError(f"Missing dimension line in {matrix_path}")
+        n_rows, n_cols, n_entries = map(int, dims_line.split())
+        log(f"SCP259 Epi matrix dims: genes={n_rows}, cells={n_cols}, nnz={n_entries}")
+
+        for line_number, line in enumerate(handle, start=1):
+            parts = line.split()
+            if len(parts) != 3:
+                continue
+            row_idx = int(parts[0])
+            col_idx = int(parts[1])
+            value = float(parts[2])
+
+            target = selected_col_map.get(col_idx)
+            if target is None:
+                continue
+            group, cell_pos = target
+            totals[group][cell_pos] += value
+
+            gene_pos = row_target_map.get(row_idx)
+            if gene_pos is not None:
+                matrices[group][cell_pos, gene_pos] += value
+
+            if line_number % 20000000 == 0:
+                log(f"processed {line_number} matrix entries")
+
+    for group in matrices:
+        group_totals = totals[group]
+        group_totals[group_totals == 0] = 1.0
+        matrices[group] = np.log1p((matrices[group] / group_totals[:, None]) * 1e6)
+
+    return matrices, used_genes
 
 
 def parse_args():
@@ -146,41 +329,16 @@ def run_group_cscn(data_dir: Path, run_name: str, group: str, matrix, max_worker
     log(f"DAG files written for {group}: {dag_count}")
 
 
-def prepare_expression_inputs(data_dir: Path, gene_list_path: Path, sample_size: int, random_seed: int, run_name: str):
-    helper_path = REPO_ROOT / "scripts" / "biomarker" / "prepare_SCP259_expression.R"
-    cmd = [
-        "Rscript",
-        str(helper_path),
-        "--data-dir",
-        str(data_dir),
-        "--gene-list-path",
-        str(gene_list_path),
-        "--sample-size",
-        str(sample_size),
-        "--random-seed",
-        str(random_seed),
-        "--run-name",
-        run_name,
-    ]
-    log("preparing sampled expression matrices via R helper")
-    subprocess.run(cmd, check=True)
-
-
-def load_group_matrix(path: Path):
-    df = pd.read_csv(path)
-    if "cell_id" not in df.columns:
-        raise ValueError(f"Missing cell_id column in {path}")
-    gene_columns = [column for column in df.columns if column != "cell_id"]
-    matrix = df[gene_columns].to_numpy(dtype=float)
-    cell_ids = df["cell_id"].astype(str).tolist()
-    return cell_ids, gene_columns, matrix
-
-
 def main():
     args = parse_args()
 
     from biomarker.causal import run_causal_analysis
-    from biomarker.datasets import build_expression_df, load_saved_group_graphs, save_prepared_inputs
+    from biomarker.datasets import (
+        build_expression_df,
+        load_gene_names,
+        load_saved_group_graphs,
+        save_prepared_inputs,
+    )
     from biomarker.graph_utils import (
         get_global_graph,
         identify_biomarkers_from_group_graphs,
@@ -190,6 +348,11 @@ def main():
 
     data_dir = args.data_dir.resolve()
     output_dir = data_dir / "output_deseq"
+    metadata_path = data_dir / "metadata" / "all.meta2.txt"
+    expression_dir = data_dir / "expression" / "5cdc540d328cee7a2efc2348"
+    matrix_path = expression_dir / "gene_sorted-Epi.matrix.mtx"
+    barcodes_path = expression_dir / "Epi.barcodes2.tsv"
+    genes_path = expression_dir / "Epi.genes.tsv"
     gene_list_path = (
         args.gene_list_path.resolve()
         if args.gene_list_path is not None
@@ -206,37 +369,35 @@ def main():
     log(f"random seed: {args.random_seed}")
     log(f"max workers: {args.max_workers}")
     log(f"prepare only: {args.prepare_only}")
+    validate_required_file(metadata_path, "metadata table")
+    validate_required_file(matrix_path, "Epi matrix")
+    validate_required_file(barcodes_path, "Epi barcodes")
+    validate_required_file(genes_path, "Epi genes")
     validate_required_file(gene_list_path, "top-gene list")
 
-    prepare_expression_inputs(
-        data_dir=data_dir,
-        gene_list_path=gene_list_path,
+    log_stage("Load Inputs")
+    top_genes = load_gene_names(gene_list_path)
+    grouped_cells, summary_by_group = read_scp259_metadata_rows(metadata_path)
+    log_group_summary(summary_by_group)
+
+    log_stage("Sample Cells")
+    sampled_cells = sample_cells_by_group(
+        grouped_cells,
         sample_size=args.sample_size,
         random_seed=args.random_seed,
-        run_name=run_name,
     )
+    for group, cell_ids in sampled_cells.items():
+        log(f"sampled cells for {group}: {len(cell_ids)}")
+        log(f"first 3 sampled {group} cells: {cell_ids[:3]}")
 
-    healthy_expr_path = output_dir / f"{run_name}_healthy_expression.csv.gz"
-    inflamed_expr_path = output_dir / f"{run_name}_inflamed_expression.csv.gz"
-    used_gene_paths = sorted(output_dir.glob(f"{run_name}_top*_genes_used.csv"))
-    if len(used_gene_paths) != 1:
-        raise FileNotFoundError(
-            f"Expected exactly one used-gene file for {run_name}, found {len(used_gene_paths)}"
-        )
-    used_genes_path = used_gene_paths[0]
-
-    validate_required_file(healthy_expr_path, "prepared healthy expression matrix")
-    validate_required_file(inflamed_expr_path, "prepared inflamed expression matrix")
-    validate_required_file(used_genes_path, "used-gene list")
-
-    log_stage("Load Prepared Matrices")
-    healthy_cells, healthy_genes, healthy_matrix = load_group_matrix(healthy_expr_path)
-    inflamed_cells, inflamed_genes, inflamed_matrix = load_group_matrix(inflamed_expr_path)
-    if healthy_genes != inflamed_genes:
-        raise ValueError("Healthy and inflamed prepared matrices use different gene columns")
-    used_genes = healthy_genes
-    matrices = {"healthy": healthy_matrix, "inflamed": inflamed_matrix}
-    sampled_cells = {"healthy": healthy_cells, "inflamed": inflamed_cells}
+    log_stage("Extract Expression")
+    matrices, used_genes = extract_scp259_sampled_expression(
+        matrix_path=matrix_path,
+        barcodes_path=barcodes_path,
+        genes_path=genes_path,
+        sampled_cells=sampled_cells,
+        top_genes=top_genes,
+    )
 
     for group, matrix in matrices.items():
         log(
@@ -251,7 +412,7 @@ def main():
         sampled_cells=sampled_cells,
         matrices=matrices,
         used_genes=used_genes,
-        used_genes_filename=used_genes_path.name,
+        used_genes_filename=f"{run_name}_top{len(used_genes)}_genes_used.csv",
     )
 
     if args.prepare_only:
