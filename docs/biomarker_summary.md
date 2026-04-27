@@ -4,6 +4,7 @@ This note summarizes the biomarker outputs currently present under `data/` and e
 
 Scope:
 
+- `SCP259`
 - `GSE115978`
 - `GSE121893`
 - `GSE131907`
@@ -23,21 +24,23 @@ From strongest biological consistency to weakest:
 
 1. `GSE159115`
 2. `GSE138852`
-3. `GSE132465`
-4. `GSE131907`
-5. `GSE121893`
-6. `GSE115978`
+3. `SCP259`
+4. `GSE132465`
+5. `GSE131907`
+6. `GSE121893`
+7. `GSE115978`
 
 ## Dataset Summary Table
 
-| Dataset | Comparison | Representative biomarkers | Main enrichment signal | Assessment |
-| --- | --- | --- | --- | --- |
-| `GSE159115` | `ccRCC tumor` vs `PT-B/PT-C normal` | `CD68`, `TM4SF18`, `DCDC2`, `SLC25A25`, `CRACR2B`, `PFKL` | `glycolysis`, `pyruvate metabolism`, `HIF-1`, `carbon metabolism`, `PPP` | Strong match |
-| `GSE138852` | `AD` vs `ct` | `GPM6A`, `NTRK2`, `CTNNA2`, `SLC1A2`, `GPC5`, `NRXN1`, `SPP1` | `synapse organization`, `synapse structure/activity`, `axonogenesis`, `neuron migration` | Strong match |
-| `GSE132465` | `tumor epithelial` vs `normal epithelial` | `CLCA4`, `ZG16`, `PHGR1`, `GUCA2A`, `GUCA2B`, `CA7`, `ITLN1`, `MS4A12`, `LYPD8` | `chloride transport`, `nitrogen metabolism`, `mineral absorption`, metal-ion/homeostasis terms | Good match, but mainly normal epithelial program |
-| `GSE131907` | `normal lung epithelial` vs `tumor malignant epithelial` | `ABCC3`, `LINC00152`, `CRABP2`, `CEACAM5`, `PMEPA1`, `ALDH1A1`, `PVRL4`, `FAM83A` | weak GO; `PPAR signaling` in DESeq2-only set | Moderate match |
-| `GSE121893` | `dHF` vs `N` | `RGS5`, `VWF`, `IFIT3`, `ITLN1`, `MTRNR2L13` | `apoptosis`, `complement/coagulation`, `platelet activation`, `ECM/focal adhesion` | Partial match, noisy |
-| `GSE115978` | `malignant treatment-naive` vs `post-treatment` | `ANO1`, `GZMM`, `SOX11`, `NEFL`, `NEFM`, `CHRNA1` | only `neurofilament` and `postsynaptic cytoskeleton` | Weak match |
+| Dataset | Disease / cancer | Comparison | Representative biomarkers | Main enrichment signal | Assessment | Sample Size (Cells) | Gene Size |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `GSE159115` | clear cell renal cell carcinoma | `ccRCC tumor` vs `PT-B/PT-C normal` | `CD68`, `TM4SF18`, `DCDC2`, `SLC25A25`, `CRACR2B`, `PFKL` | `glycolysis`, `pyruvate metabolism`, `HIF-1`, `carbon metabolism`, `PPP` | Strong match | `100 / 100` | 150|
+| `GSE138852` | Alzheimer's disease | `AD` vs `ct` | `GPM6A`, `NTRK2`, `CTNNA2`, `SLC1A2`, `GPC5`, `NRXN1`, `SPP1` | `synapse organization`, `synapse structure/activity`, `axonogenesis`, `neuron migration` | Strong match | `3000 / 3000` |150|
+| `SCP259` | ulcerative colitis | `Inflamed crypt/proliferative epithelial` vs `Healthy crypt/proliferative epithelial` | `TFF1`, `S100P`, `PLA2G2A`, `PI3`, `LYZ`, `REG4`, `PDIA3`, `CEACAM5` | biomarker: `peptidase inhibitor activity`, `secretory granule lumen`, `MHC assembly`, `sulfur metabolism`; DESeq2-only: `fatty acid oxidation`, `acute inflammatory response` | Strong match | `4000 / 4000` | 150 |
+| `GSE132465` | colorectal cancer | `tumor epithelial` vs `normal epithelial` | `CLCA4`, `ZG16`, `PHGR1`, `GUCA2A`, `GUCA2B`, `CA7`, `ITLN1`, `MS4A12`, `LYPD8` | `chloride transport`, `nitrogen metabolism`, `mineral absorption`, metal-ion/homeostasis terms | Good match, but mainly normal epithelial program | `1000 / 1000` |150|
+| `GSE131907` | lung cancer | `normal lung epithelial` vs `tumor malignant epithelial` | `ABCC3`, `LINC00152`, `CRABP2`, `CEACAM5`, `PMEPA1`, `ALDH1A1`, `PVRL4`, `FAM83A` | weak GO; `PPAR signaling` in DESeq2-only set | Moderate match | `2000 / 2000` |150|
+| `GSE121893` | dilated heart failure | `dHF` vs `N` | `RGS5`, `VWF`, `IFIT3`, `ITLN1`, `MTRNR2L13` | `apoptosis`, `complement/coagulation`, `platelet activation`, `ECM/focal adhesion` | Partial match, noisy | `500 / 500` |150|
+| `GSE115978` | melanoma | `malignant treatment-naive` vs `post-treatment` | `ANO1`, `GZMM`, `SOX11`, `NEFL`, `NEFM`, `CHRNA1` | only `neurofilament` and `postsynaptic cytoskeleton` | Weak match | `800 / 800` |150|
 
 ## Per-Dataset Notes
 
@@ -46,6 +49,10 @@ From strongest biological consistency to weakest:
 Comparison:
 
 - `ccRCC tumor` vs `PT-B/PT-C normal`
+
+Dataset context:
+
+- Clear cell renal cell carcinoma, compared against paired normal proximal tubule-related kidney epithelium.
 
 Interpretation:
 
@@ -66,6 +73,10 @@ Comparison:
 
 - `AD` vs `ct`
 
+Dataset context:
+
+- Alzheimer's disease versus control brain samples.
+
 Interpretation:
 
 - The biomarker set is tightly centered on neuronal and synaptic genes.
@@ -76,11 +87,48 @@ Verdict:
 
 - `Strong match`
 
+### `SCP259`
+
+Comparison:
+
+- `Inflamed crypt/proliferative epithelial` vs `Healthy crypt/proliferative epithelial`
+
+Dataset context:
+
+- Ulcerative colitis, focused on inflamed versus healthy proliferative crypt epithelium.
+
+Interpretation:
+
+- This result is strongly consistent with inflammatory epithelial remodeling in ulcerative colitis.
+- The biomarker enrichment points to a coherent secretory / barrier-defense / immune-interface program:
+  - peptidase and endopeptidase inhibitor activity
+  - vesicle and secretory granule lumen terms
+  - MHC protein complex assembly and peptide antigen assembly
+  - sulfurtransferase / sulfur metabolism
+- Representative biomarker genes such as `S100P`, `TIMP1`, `PI3`, `LYZ`, `CEACAM5`, `PDIA3`, and `HLA-DMA` support an inflamed secretory epithelial state rather than a generic proliferation-only signature.
+- The `DESeq2-only` set complements this well:
+  - `fatty acid oxidation`
+  - `lipid oxidation`
+  - `fatty acid beta-oxidation`
+  - `acute inflammatory response`
+- Taken together, the comparison reads as a shift away from epithelial metabolic homeostasis and toward inflammatory, secretory, and immune-interfacing functions.
+- The `KEGG` layer is also coherent:
+  - biomarker set: `sulfur metabolism`
+  - `DESeq2-only` set: `fatty acid degradation`
+
+Verdict:
+
+- `Strong match`
+
 ### `GSE132465`
 
 Comparison:
 
 - `tumor epithelial` vs `normal epithelial`
+
+Dataset context:
+
+- Colorectal cancer epithelial cells versus normal epithelial cells.
 
 Interpretation:
 
@@ -102,6 +150,10 @@ Comparison:
 
 - `normal lung epithelial` vs `tumor malignant epithelial`
 
+Dataset context:
+
+- Lung cancer malignant epithelial cells versus normal lung epithelial cells.
+
 Interpretation:
 
 - The biomarker genes themselves are fairly plausible for malignant epithelial lung programs.
@@ -119,6 +171,10 @@ Verdict:
 Comparison:
 
 - `dHF` vs `N`
+
+Dataset context:
+
+- Dilated heart failure versus normal control, with a mixed heart-cell composition background.
 
 Interpretation:
 
@@ -140,6 +196,10 @@ Verdict:
 Comparison:
 
 - `malignant treatment-naive` vs `post-treatment`
+
+Dataset context:
+
+- Melanoma malignant cells before versus after treatment.
 
 Interpretation:
 
@@ -163,6 +223,7 @@ If the current biomarker results need to be prioritized for reporting or downstr
 - Primary showcase:
   - `GSE159115`
   - `GSE138852`
+  - `SCP259`
   - `GSE132465`
 - Secondary / acceptable with qualification:
   - `GSE131907`
