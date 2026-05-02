@@ -75,6 +75,24 @@ def parse_args():
         default=None,
         help="Optional plot title. Defaults to '<dataset-name> Biomarker DAG'.",
     )
+    parser.add_argument(
+        "--size-by",
+        choices=("degree", "in_degree", "out_degree"),
+        default=None,
+        help="Scale node size by a graph degree metric. Default: fixed sizes by node role.",
+    )
+    parser.add_argument(
+        "--min-node-size",
+        type=int,
+        default=700,
+        help="Minimum node size used when --size-by is set.",
+    )
+    parser.add_argument(
+        "--max-node-size",
+        type=int,
+        default=1400,
+        help="Maximum node size used when --size-by is set.",
+    )
     return parser.parse_args()
 
 
@@ -206,6 +224,7 @@ def main() -> None:
     log(dataset_name, f"gene list path: {gene_list_path}")
     log(dataset_name, f"biomarkers path: {biomarkers_path}")
     log(dataset_name, f"output path: {output_path}")
+    log(dataset_name, f"size by: {args.size_by or 'fixed'}")
 
     if not gene_list_path.is_file():
         raise FileNotFoundError(f"Missing gene list file: {gene_list_path}")
@@ -245,14 +264,18 @@ def main() -> None:
         f"{biomarker_dag.number_of_edges()} edges, {confounder_count} unique confounders"
     )
 
-    saved_path = draw_global_network_highlighted(
+    saved_path, legend_path = draw_global_network_highlighted(
         biomarker_dag,
         treatment_nodes=biomarkers,
         outcome_nodes=[args.outcome_node],
         save_path=str(output_path),
         title=title,
+        size_by=args.size_by,
+        min_node_size=args.min_node_size,
+        max_node_size=args.max_node_size,
     )
     log(dataset_name, f"saved DAG plot to {saved_path}")
+    log(dataset_name, f"saved DAG legend to {legend_path}")
 
 
 if __name__ == "__main__":

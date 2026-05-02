@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 import networkx as nx
 import pandas as pd
 
@@ -137,6 +139,10 @@ def _resolve_highlighted_dag_path(save_path):
     return output_path
 
 
+def _resolve_legend_path(output_path):
+    return output_path.with_name(f"{output_path.stem}_legend{output_path.suffix}")
+
+
 def _dag_layout(global_graph):
     if nx.is_directed_acyclic_graph(global_graph):
         layout_graph = global_graph.copy()
@@ -147,12 +153,129 @@ def _dag_layout(global_graph):
     return nx.kamada_kawai_layout(global_graph)
 
 
+def _resolve_node_size_map(
+    global_graph,
+    size_by=None,
+    min_node_size=700,
+    max_node_size=1400,
+):
+    if size_by is None:
+        return {}
+
+    if size_by == "degree":
+        metric = dict(global_graph.degree())
+    elif size_by == "in_degree":
+        metric = dict(global_graph.in_degree())
+    elif size_by == "out_degree":
+        metric = dict(global_graph.out_degree())
+    else:
+        raise ValueError(
+            f"Unsupported size_by '{size_by}'. Use one of: degree, in_degree, out_degree."
+        )
+
+    values = list(metric.values())
+    if not values:
+        return {}
+    min_value = min(values)
+    max_value = max(values)
+    if min_value == max_value:
+        midpoint = int((min_node_size + max_node_size) / 2)
+        return {node: midpoint for node in global_graph.nodes()}
+
+    scale = max_node_size - min_node_size
+    return {
+        node: int(min_node_size + ((value - min_value) / (max_value - min_value)) * scale)
+        for node, value in metric.items()
+    }
+
+
+def _resolve_node_metric(global_graph, size_by=None):
+    if size_by is None:
+        return {}
+    if size_by == "degree":
+        return dict(global_graph.degree())
+    if size_by == "in_degree":
+        return dict(global_graph.in_degree())
+    if size_by == "out_degree":
+        return dict(global_graph.out_degree())
+    raise ValueError(
+        f"Unsupported size_by '{size_by}'. Use one of: degree, in_degree, out_degree."
+    )
+
+
+def _legend_marker_size(node_size):
+    return max(8, (float(node_size) ** 0.5) / 2.0)
+
+
+def draw_highlighted_dag_legend(
+    save_path,
+    size_by=None,
+    min_node_size=700,
+    max_node_size=1400,
+    metric_values=None,
+):
+    output_path = _resolve_highlighted_dag_path(save_path)
+    legend_path = _resolve_legend_path(output_path)
+
+    handles = [
+        Patch(facecolor="lightcoral", edgecolor="firebrick", label="Biomarker"),
+        Patch(facecolor="skyblue", edgecolor="navy", label="Outcome"),
+        Patch(facecolor="lightgray", edgecolor="darkgray", label="Other"),
+    ]
+
+    if size_by is not None and metric_values:
+        unique_values = sorted(set(metric_values.values()))
+        low_value = unique_values[0]
+        high_value = unique_values[-1]
+        mid_value = unique_values[len(unique_values) // 2]
+        scale_values = [low_value, mid_value, high_value]
+        min_metric = low_value
+        max_metric = high_value
+
+        if min_metric == max_metric:
+            scale_sizes = [int((min_node_size + max_node_size) / 2)] * 3
+        else:
+            scale_sizes = [
+                int(
+                    min_node_size
+                    + ((value - min_metric) / (max_metric - min_metric))
+                    * (max_node_size - min_node_size)
+                )
+                for value in scale_values
+            ]
+
+        for value, size in zip(scale_values, scale_sizes):
+            handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    label=f"{size_by} = {value}",
+                    markerfacecolor="gray",
+                    markeredgecolor="gray",
+                    markersize=_legend_marker_size(size),
+                )
+            )
+
+    fig, ax = plt.subplots(figsize=(4.5, 3.5))
+    ax.axis("off")
+    ax.legend(handles=handles, loc="center", frameon=False, title="Legend")
+    fig.tight_layout()
+    fig.savefig(legend_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    return legend_path
+
+
 def draw_global_network_highlighted(
     global_graph,
     treatment_nodes,
     outcome_nodes,
     save_path="results",
     title="Biomarker DAG",
+    size_by=None,
+    min_node_size=700,
+    max_node_size=1400,
 ):
     output_path = _resolve_highlighted_dag_path(save_path)
     pos = _dag_layout(global_graph)
@@ -164,21 +287,29 @@ def draw_global_network_highlighted(
     linewidths = []
     treatment_set = set(treatment_nodes)
     outcome_set = set(outcome_nodes)
+    metric_values = _resolve_node_metric(global_graph, size_by=size_by)
+    size_map = _resolve_node_size_map(
+        global_graph,
+        size_by=size_by,
+        min_node_size=min_node_size,
+        max_node_size=max_node_size,
+    )
 
     for node in global_graph.nodes():
+        base_size = size_map.get(node)
         if node in outcome_set:
             node_colors.append("skyblue")
-            node_sizes.append(1100)
+            node_sizes.append(base_size if base_size is not None else 1100)
             edge_colors.append("navy")
             linewidths.append(2.2)
         elif node in treatment_set:
             node_colors.append("lightcoral")
-            node_sizes.append(950)
+            node_sizes.append(base_size if base_size is not None else 950)
             edge_colors.append("firebrick")
             linewidths.append(2.0)
         else:
             node_colors.append("lightgray")
-            node_sizes.append(700)
+            node_sizes.append(base_size if base_size is not None else 700)
             edge_colors.append("darkgray")
             linewidths.append(1.0)
 
@@ -214,7 +345,14 @@ def draw_global_network_highlighted(
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close()
-    return output_path
+    legend_path = draw_highlighted_dag_legend(
+        save_path=str(output_path),
+        size_by=size_by,
+        min_node_size=min_node_size,
+        max_node_size=max_node_size,
+        metric_values=metric_values,
+    )
+    return output_path, legend_path
 
 
 def add_sink_node_to_graph(graph, sink_node_name="SINK"):

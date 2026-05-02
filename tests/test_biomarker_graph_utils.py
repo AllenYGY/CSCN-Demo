@@ -13,6 +13,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from biomarker.graph_utils import (
+    _resolve_node_size_map,
+    _resolve_legend_path,
     build_biomarker_dag,
     filter_graph_nodes,
     map_node_id_to_gene_directed,
@@ -59,3 +61,26 @@ def test_build_biomarker_dag_adds_outcome_and_confounders():
     assert dag.has_edge("C", "T")
     assert dag.has_edge("T", "DISEASE")
     assert confounders_by_treatment == {"T": ["C"]}
+
+
+def test_resolve_node_size_map_scales_degree():
+    graph = nx.DiGraph()
+    graph.add_edge("A", "B")
+    graph.add_edge("A", "C")
+    graph.add_edge("B", "C")
+
+    size_map = _resolve_node_size_map(
+        graph,
+        size_by="degree",
+        min_node_size=100,
+        max_node_size=300,
+    )
+
+    assert size_map["A"] == 300
+    assert size_map["B"] == 100
+    assert size_map["C"] == 300
+
+
+def test_resolve_legend_path_appends_legend_suffix():
+    legend_path = _resolve_legend_path(Path("/tmp/example.png"))
+    assert legend_path == Path("/tmp/example_legend.png")
