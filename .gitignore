@@ -24,6 +24,7 @@ coverage/
 
 # Jupyter
 .ipynb_checkpoints/
+/evaluate_ATE_*.ipynb
 
 # R session files
 .Rhistory
@@ -34,6 +35,7 @@ Rplots.pdf
 
 # Large local datasets and generated analysis outputs
 data/
+results/
 result-interpreter/
 runs/
 
@@ -42,5 +44,6 @@ runs/
 .codex/
 legacy/*
 docs/others/*
+docs/response/
 docs/reviewer_response_gse121893.md
 docs/reviewer_response_gse138852.md
