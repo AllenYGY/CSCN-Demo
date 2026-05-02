@@ -2,6 +2,7 @@ import os
 import pickle
 import logging
 import warnings
+import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import networkx as nx
@@ -28,6 +29,35 @@ from pgmpy.estimators import PC
 
 
 logging.getLogger("pgmpy").setLevel(logging.WARNING)
+
+
+_PICKLE_CLASS_ALIASES = {
+    ("Biomarker_BreastTumer", "CSCN"): ("biomarker.cscn", "CSCN"),
+    ("Biomarker_BreastTumer", "KDT"): ("biomarker.kdt", "KDT"),
+    ("Biomarker_BreastTumer", "KDT_Node"): ("biomarker.kdt", "KDT_Node"),
+    ("Biomarker_BreastTumer", "qnth_element"): ("biomarker.kdt", "qnth_element"),
+    ("Biomarker_GSE138852", "CSCN"): ("biomarker.cscn", "CSCN"),
+    ("Biomarker_GSE138852", "KDT"): ("biomarker.kdt", "KDT"),
+    ("Biomarker_GSE138852", "KDT_Node"): ("biomarker.kdt", "KDT_Node"),
+    ("Biomarker_GSE138852", "qnth_element"): ("biomarker.kdt", "qnth_element"),
+    ("Biomarker_GSE159115", "CSCN"): ("biomarker.cscn", "CSCN"),
+    ("Biomarker_GSE159115", "KDT"): ("biomarker.kdt", "KDT"),
+    ("Biomarker_GSE159115", "KDT_Node"): ("biomarker.kdt", "KDT_Node"),
+    ("Biomarker_GSE159115", "qnth_element"): ("biomarker.kdt", "qnth_element"),
+}
+
+
+class _CompatUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        alias = _PICKLE_CLASS_ALIASES.get((module, name))
+        if alias is not None:
+            module, name = alias
+        return super().find_class(module, name)
+
+
+def _compat_pickle_load(handle):
+    payload = handle.read()
+    return _CompatUnpickler(io.BytesIO(payload)).load()
 
 
 class CSCN:
@@ -591,7 +621,7 @@ class CSCN:
                     dags.append(
                         (
                             int(filename[7:].split(".pkl")[0]),
-                            pickle.load(handle),
+                            _compat_pickle_load(handle),
                         )
                     )
         return dags
@@ -604,7 +634,7 @@ class CSCN:
     @staticmethod
     def load_from_file(filename):
         with open(filename, "rb") as handle:
-            return pickle.load(handle)
+            return _compat_pickle_load(handle)
 
     def _resolve_ckm_projection(self):
         if self.data is None:
