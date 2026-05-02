@@ -17,22 +17,30 @@ else:
 try:
     from .graph_utils import (
         add_sink_node_to_graph,
+        build_biomarker_dag,
         draw_global_network,
+        draw_global_network_highlighted,
+        filter_graph_nodes,
         find_confounders,
         get_global_graph,
         identify_biomarkers_from_group_graphs,
         map_node_id_to_gene,
+        map_node_id_to_gene_directed,
     )
 except ModuleNotFoundError:
     pass
 else:
     __all__ += [
         "add_sink_node_to_graph",
+        "build_biomarker_dag",
         "draw_global_network",
+        "draw_global_network_highlighted",
+        "filter_graph_nodes",
         "find_confounders",
         "get_global_graph",
         "identify_biomarkers_from_group_graphs",
         "map_node_id_to_gene",
+        "map_node_id_to_gene_directed",
     ]
 
 try:

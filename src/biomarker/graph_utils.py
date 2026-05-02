@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -9,6 +10,23 @@ def map_node_id_to_gene(dags, id2gene):
     new_dags = []
     for dag_id, dag in dags:
         new_dag = nx.Graph()
+        try:
+            node_mapping = {node: id2gene[node] for node in dag.nodes()}
+        except KeyError as e:
+            print(f"Warning: id {e} not found in id2gene table")
+            continue
+        for old_node, new_node in node_mapping.items():
+            new_dag.add_node(new_node, **dag.nodes[old_node])
+        for u, v in dag.edges():
+            new_dag.add_edge(node_mapping[u], node_mapping[v], **dag.edges[u, v])
+        new_dags.append((dag_id, new_dag))
+    return new_dags
+
+
+def map_node_id_to_gene_directed(dags, id2gene):
+    new_dags = []
+    for dag_id, dag in dags:
+        new_dag = nx.DiGraph()
         try:
             node_mapping = {node: id2gene[node] for node in dag.nodes()}
         except KeyError as e:
@@ -64,6 +82,139 @@ def draw_global_network(global_graph, save_path="results", title="Global Network
     plt.tight_layout()
     plt.savefig(f"{save_path}/{title}.png", dpi=300)
     plt.show()
+
+
+def filter_graph_nodes(graph, node_list):
+    if not node_list:
+        return graph.__class__()
+    existing_nodes = [node for node in node_list if node in graph]
+    if not existing_nodes:
+        return graph.__class__()
+    return graph.subgraph(existing_nodes).copy()
+
+
+def build_biomarker_dag(
+    global_graph,
+    highlighted_treatments,
+    outcome_node="DISEASE",
+    candidate_treatments=None,
+    confounder_method="classic",
+    connect_treatments_to_outcome=True,
+):
+    candidate_treatments = list(
+        candidate_treatments if candidate_treatments is not None else highlighted_treatments
+    )
+    graph_with_outcome = add_sink_node_to_graph(global_graph.copy(), sink_node_name=outcome_node)
+    filter_nodes = set(highlighted_treatments)
+    confounders_by_treatment = {}
+
+    for treatment in candidate_treatments:
+        if treatment not in graph_with_outcome:
+            confounders_by_treatment[treatment] = []
+            continue
+        confounders = find_confounders(
+            graph_with_outcome,
+            treatment,
+            outcome_node,
+            method=confounder_method,
+        )
+        confounders_by_treatment[treatment] = confounders
+        filter_nodes.update(confounders)
+
+    filtered_graph = filter_graph_nodes(global_graph, sorted(filter_nodes))
+    filtered_graph.add_node(outcome_node)
+    if connect_treatments_to_outcome:
+        for treatment in candidate_treatments:
+            filtered_graph.add_edge(treatment, outcome_node)
+    return filtered_graph, confounders_by_treatment
+
+
+def _resolve_highlighted_dag_path(save_path):
+    output_path = Path(save_path)
+    if output_path.suffix.lower() != ".png":
+        output_path = output_path.with_suffix(".png")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def _dag_layout(global_graph):
+    if nx.is_directed_acyclic_graph(global_graph):
+        layout_graph = global_graph.copy()
+        for layer, nodes in enumerate(nx.topological_generations(global_graph)):
+            for node in nodes:
+                layout_graph.nodes[node]["layer"] = layer
+        return nx.multipartite_layout(layout_graph, subset_key="layer", align="horizontal")
+    return nx.kamada_kawai_layout(global_graph)
+
+
+def draw_global_network_highlighted(
+    global_graph,
+    treatment_nodes,
+    outcome_nodes,
+    save_path="results",
+    title="Biomarker DAG",
+):
+    output_path = _resolve_highlighted_dag_path(save_path)
+    pos = _dag_layout(global_graph)
+    plt.figure(figsize=(14, 10))
+
+    node_colors = []
+    node_sizes = []
+    edge_colors = []
+    linewidths = []
+    treatment_set = set(treatment_nodes)
+    outcome_set = set(outcome_nodes)
+
+    for node in global_graph.nodes():
+        if node in outcome_set:
+            node_colors.append("skyblue")
+            node_sizes.append(1100)
+            edge_colors.append("navy")
+            linewidths.append(2.2)
+        elif node in treatment_set:
+            node_colors.append("lightcoral")
+            node_sizes.append(950)
+            edge_colors.append("firebrick")
+            linewidths.append(2.0)
+        else:
+            node_colors.append("lightgray")
+            node_sizes.append(700)
+            edge_colors.append("darkgray")
+            linewidths.append(1.0)
+
+    nx.draw_networkx_nodes(
+        global_graph,
+        pos,
+        node_color=node_colors,
+        node_size=node_sizes,
+        edgecolors=edge_colors,
+        linewidths=linewidths,
+    )
+    nx.draw_networkx_edges(
+        global_graph,
+        pos,
+        width=1.4,
+        alpha=0.6,
+        arrows=True,
+        arrowsize=18,
+        arrowstyle="-|>",
+        edge_color="dimgray",
+        connectionstyle="arc3,rad=0.04",
+    )
+    nx.draw_networkx_labels(
+        global_graph,
+        pos,
+        font_size=10,
+        font_color="dimgray",
+        font_family="sans-serif",
+    )
+
+    plt.title(title, fontsize=20, fontweight="bold", color="dimgray")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    return output_path
 
 
 def add_sink_node_to_graph(graph, sink_node_name="SINK"):
