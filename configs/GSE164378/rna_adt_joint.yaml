@@ -19,7 +19,7 @@ preprocess:
 
 run:
   output_dir: ../../runs
-  max_workers: 4
+  max_workers: 120
   sigmoid_score: 0.1
   significance_level: 0.05
   max_cond_vars: 20
