@@ -94,6 +94,12 @@ def parse_args():
         help="Random seed used by spring layout.",
     )
     parser.add_argument(
+        "--inner-ring-max-nodes",
+        type=int,
+        default=12,
+        help="Maximum node count for the innermost biomarker ring in concentric layout. Default: 12",
+    )
+    parser.add_argument(
         "--max-nodes-per-ring",
         type=int,
         default=20,
@@ -110,6 +116,11 @@ def parse_args():
         choices=("all", "biomarkers", "none"),
         default="biomarkers",
         help="Which nodes get text labels. Default: biomarkers",
+    )
+    parser.add_argument(
+        "--ignore-isolated-nodes",
+        action="store_true",
+        help="Drop degree-0 nodes from the graph before plotting, except protected biomarker/outcome nodes.",
     )
     parser.add_argument(
         "--size-by",
@@ -231,6 +242,7 @@ def main() -> None:
     from biomarker.graph_utils import (
         build_biomarker_dag,
         draw_global_network_highlighted,
+        filter_isolated_nodes,
         get_global_graph,
     )
 
@@ -262,9 +274,11 @@ def main() -> None:
     log(dataset_name, f"output path: {output_path}")
     log(dataset_name, f"graph scope: {args.graph_scope}")
     log(dataset_name, f"layout: {args.layout}")
+    log(dataset_name, f"inner ring max nodes: {args.inner_ring_max_nodes}")
     log(dataset_name, f"max nodes per ring: {args.max_nodes_per_ring}")
     log(dataset_name, f"ring growth factor: {args.ring_growth_factor}")
     log(dataset_name, f"label scope: {args.label_scope}")
+    log(dataset_name, f"ignore isolated nodes: {args.ignore_isolated_nodes}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
 
     if not gene_list_path.is_file():
@@ -315,6 +329,12 @@ def main() -> None:
             if treatment in graph_to_draw:
                 graph_to_draw.add_edge(treatment, args.outcome_node)
 
+    if args.ignore_isolated_nodes:
+        graph_to_draw = filter_isolated_nodes(
+            graph_to_draw,
+            protected_nodes=set(biomarkers) | set(outcome_nodes),
+        )
+
     saved_path, legend_path = draw_global_network_highlighted(
         graph_to_draw,
         treatment_nodes=biomarkers,
@@ -324,6 +344,7 @@ def main() -> None:
         layout=args.layout,
         layout_seed=args.layout_seed,
         label_scope=args.label_scope,
+        inner_ring_max_nodes=args.inner_ring_max_nodes,
         max_nodes_per_ring=args.max_nodes_per_ring,
         ring_growth_factor=args.ring_growth_factor,
         size_by=args.size_by,

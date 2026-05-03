@@ -17,6 +17,7 @@ from biomarker.graph_utils import (
     _resolve_layout,
     _resolve_legend_path,
     build_biomarker_dag,
+    filter_isolated_nodes,
     filter_graph_nodes,
     get_global_graph,
     map_node_id_to_gene_directed,
@@ -161,6 +162,29 @@ def test_concentric_layout_opens_new_ring_when_capacity_is_exceeded():
     assert radii.count(3.0) == 1
 
 
+def test_concentric_layout_uses_separate_inner_ring_capacity():
+    graph = nx.DiGraph()
+    graph.add_node("DISEASE")
+    graph.add_nodes_from(["B1", "B2", "B3", "B4"])
+
+    pos = _resolve_layout(
+        graph,
+        layout="concentric",
+        treatment_nodes=["B1", "B2", "B3", "B4"],
+        outcome_nodes=["DISEASE"],
+        inner_ring_max_nodes=2,
+        max_nodes_per_ring=20,
+        ring_growth_factor=1.0,
+    )
+
+    radii = sorted(
+        round((pos[node][0] ** 2 + pos[node][1] ** 2) ** 0.5, 3)
+        for node in ["B1", "B2", "B3", "B4"]
+    )
+    assert radii.count(1.4) == 2
+    assert radii.count(3.0) == 2
+
+
 def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes():
     graph = nx.DiGraph()
     graph.add_nodes_from(["DISEASE", "B1", "O1"])
@@ -185,3 +209,15 @@ def test_get_global_graph_preserves_explicit_isolated_nodes():
 
     assert set(global_graph.nodes()) == {"G1", "G2", "G3"}
     assert ("G1", "G2") in global_graph.edges()
+
+
+def test_filter_isolated_nodes_preserves_protected_nodes():
+    graph = nx.DiGraph()
+    graph.add_edge("G1", "G2")
+    graph.add_node("ISO")
+    graph.add_node("DISEASE")
+
+    filtered = filter_isolated_nodes(graph, protected_nodes={"DISEASE"})
+
+    assert "ISO" not in filtered
+    assert "DISEASE" in filtered

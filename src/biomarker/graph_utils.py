@@ -98,6 +98,18 @@ def filter_graph_nodes(graph, node_list):
     return graph.subgraph(existing_nodes).copy()
 
 
+def filter_isolated_nodes(graph, protected_nodes=None):
+    protected_nodes = set(protected_nodes or [])
+    filtered_graph = graph.copy()
+    isolated_nodes = [
+        node
+        for node, degree in filtered_graph.degree()
+        if degree == 0 and node not in protected_nodes
+    ]
+    filtered_graph.remove_nodes_from(isolated_nodes)
+    return filtered_graph
+
+
 def build_biomarker_dag(
     global_graph,
     highlighted_treatments,
@@ -155,6 +167,7 @@ def _resolve_concentric_layout(
     global_graph,
     treatment_nodes,
     outcome_nodes,
+    inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
 ):
@@ -213,7 +226,7 @@ def _resolve_concentric_layout(
     outer_radius = place_nodes_on_rings(
         treatment_set,
         start_radius=1.4,
-        base_capacity=max_nodes_per_ring,
+        base_capacity=inner_ring_max_nodes,
     )
 
     layer_start_radius = outer_radius + 1.6
@@ -237,6 +250,7 @@ def _resolve_layout(
     layout_seed=42,
     treatment_nodes=None,
     outcome_nodes=None,
+    inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
 ):
@@ -251,6 +265,7 @@ def _resolve_layout(
             global_graph,
             treatment_nodes=treatment_nodes or [],
             outcome_nodes=outcome_nodes or [],
+            inner_ring_max_nodes=inner_ring_max_nodes,
             max_nodes_per_ring=max_nodes_per_ring,
             ring_growth_factor=ring_growth_factor,
         )
@@ -390,6 +405,7 @@ def draw_global_network_highlighted(
     layout="spring",
     layout_seed=42,
     label_scope="all",
+    inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
     size_by=None,
@@ -403,6 +419,7 @@ def draw_global_network_highlighted(
         layout_seed=layout_seed,
         treatment_nodes=treatment_nodes,
         outcome_nodes=outcome_nodes,
+        inner_ring_max_nodes=inner_ring_max_nodes,
         max_nodes_per_ring=max_nodes_per_ring,
         ring_growth_factor=ring_growth_factor,
     )
