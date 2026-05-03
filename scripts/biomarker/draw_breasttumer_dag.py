@@ -277,6 +277,23 @@ def load_group_graph(data_dir: Path, cscn_prefix: str, group: str, gene_names: l
             f"Missing CSCN object for group {group}: {cscn_path}"
         )
     cscn = CSCN.load_from_file(cscn_path)
+    resolved_output_dir = Path(str(cscn.output_dir)).expanduser()
+    if not resolved_output_dir.exists():
+        candidate_dirs = [
+            (cscn_path.parent / resolved_output_dir).resolve(),
+            data_dir / "DAG" / group,
+            data_dir / "DAG" / cscn_prefix / group,
+        ]
+        for candidate_dir in candidate_dirs:
+            if candidate_dir.exists():
+                cscn.output_dir = str(candidate_dir)
+                break
+        else:
+            raise FileNotFoundError(
+                "Could not resolve CSCN DAG directory. "
+                f"Stored output_dir={cscn.output_dir!r}, checked: "
+                + ", ".join(str(path) for path in candidate_dirs)
+            )
     dags = cscn.load_all_dags()
     id2gene = {idx: gene for idx, gene in enumerate(gene_names)}
     directed_dags = map_node_id_to_gene_directed(dags, id2gene)
