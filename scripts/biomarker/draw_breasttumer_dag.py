@@ -152,6 +152,24 @@ def parse_args():
         default=1400,
         help="Maximum node size used when --size-by is set.",
     )
+    parser.add_argument(
+        "--edge-width",
+        type=float,
+        default=1.2,
+        help="Edge line width. Default: 1.2",
+    )
+    parser.add_argument(
+        "--edge-alpha",
+        type=float,
+        default=0.35,
+        help="Edge alpha/transparency. Default: 0.35",
+    )
+    parser.add_argument(
+        "--arrow-size",
+        type=int,
+        default=24,
+        help="Arrow head size. Default: 24",
+    )
     return parser.parse_args()
 
 
@@ -294,6 +312,9 @@ def main() -> None:
     log(dataset_name, f"label scope: {args.label_scope}")
     log(dataset_name, f"ignore isolated nodes: {args.ignore_isolated_nodes}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
+    log(dataset_name, f"edge width: {args.edge_width}")
+    log(dataset_name, f"edge alpha: {args.edge_alpha}")
+    log(dataset_name, f"arrow size: {args.arrow_size}")
 
     if not gene_list_path.is_file():
         raise FileNotFoundError(f"Missing gene list file: {gene_list_path}")
@@ -366,6 +387,9 @@ def main() -> None:
         size_by=args.size_by,
         min_node_size=args.min_node_size,
         max_node_size=args.max_node_size,
+        edge_width=args.edge_width,
+        edge_alpha=args.edge_alpha,
+        arrow_size=args.arrow_size,
     )
     log(dataset_name, f"saved DAG plot to {saved_path}")
     log(dataset_name, f"saved DAG legend to {legend_path}")

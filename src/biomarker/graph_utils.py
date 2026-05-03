@@ -419,6 +419,9 @@ def draw_global_network_highlighted(
     size_by=None,
     min_node_size=700,
     max_node_size=1400,
+    edge_width=1.2,
+    edge_alpha=0.35,
+    arrow_size=24,
 ):
     output_path = _resolve_highlighted_dag_path(save_path)
     pos = _resolve_layout(
@@ -478,10 +481,10 @@ def draw_global_network_highlighted(
     nx.draw_networkx_edges(
         global_graph,
         pos,
-        width=1.8,
-        alpha=0.7,
+        width=edge_width,
+        alpha=edge_alpha,
         arrows=True,
-        arrowsize=30,
+        arrowsize=arrow_size,
         arrowstyle="-|>",
         edge_color="dimgray",
         connectionstyle="arc3,rad=0.04",
