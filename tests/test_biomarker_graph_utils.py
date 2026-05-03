@@ -17,6 +17,7 @@ from biomarker.graph_utils import (
     _resolve_layout,
     _resolve_legend_path,
     build_biomarker_dag,
+    build_biomarker_ego_graph,
     filter_isolated_nodes,
     filter_graph_nodes,
     get_global_graph,
@@ -246,3 +247,20 @@ def test_filter_isolated_nodes_preserves_protected_nodes():
 
     assert "ISO" not in filtered
     assert "DISEASE" in filtered
+
+
+def test_build_biomarker_ego_graph_keeps_only_requested_hop_neighbors():
+    graph = nx.DiGraph()
+    graph.add_edge("B1", "N1")
+    graph.add_edge("N1", "N2")
+
+    ego_graph = build_biomarker_ego_graph(
+        global_graph=graph,
+        highlighted_treatments=["B1"],
+        outcome_node="DISEASE",
+        neighbor_depth=1,
+    )
+
+    assert set(ego_graph.nodes()) == {"B1", "N1", "DISEASE"}
+    assert "N2" not in ego_graph
+    assert ego_graph.has_edge("B1", "DISEASE")

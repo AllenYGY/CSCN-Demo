@@ -77,9 +77,15 @@ def parse_args():
     )
     parser.add_argument(
         "--graph-scope",
-        choices=("focus", "global"),
+        choices=("focus", "global", "ego"),
         default="global",
-        help="Whether to render the biomarker-focused subgraph or the full global graph. Default: global",
+        help="Whether to render the biomarker-focused subgraph, the full global graph, or a biomarker ego graph. Default: global",
+    )
+    parser.add_argument(
+        "--neighbor-depth",
+        type=int,
+        default=1,
+        help="Neighbor depth used when --graph-scope ego. Default: 1",
     )
     parser.add_argument(
         "--layout",
@@ -271,6 +277,7 @@ def main() -> None:
 
     from biomarker.graph_utils import (
         build_biomarker_dag,
+        build_biomarker_ego_graph,
         draw_global_network_highlighted,
         filter_isolated_nodes,
         get_global_graph,
@@ -303,6 +310,7 @@ def main() -> None:
     log(dataset_name, f"biomarkers path: {biomarkers_path}")
     log(dataset_name, f"output path: {output_path}")
     log(dataset_name, f"graph scope: {args.graph_scope}")
+    log(dataset_name, f"neighbor depth: {args.neighbor_depth}")
     log(dataset_name, f"layout: {args.layout}")
     log(dataset_name, f"inner ring radius: {args.inner_ring_radius}")
     log(dataset_name, f"ring gap: {args.ring_gap}")
@@ -355,7 +363,17 @@ def main() -> None:
         f"{biomarker_dag.number_of_edges()} edges, {confounder_count} unique confounders"
     )
 
-    graph_to_draw = biomarker_dag if args.graph_scope == "focus" else global_graph
+    if args.graph_scope == "focus":
+        graph_to_draw = biomarker_dag
+    elif args.graph_scope == "ego":
+        graph_to_draw = build_biomarker_ego_graph(
+            global_graph=global_graph,
+            highlighted_treatments=biomarkers,
+            outcome_node=args.outcome_node,
+            neighbor_depth=args.neighbor_depth,
+        )
+    else:
+        graph_to_draw = global_graph
     outcome_nodes = [args.outcome_node]
     if args.graph_scope == "global" and args.outcome_node not in graph_to_draw:
         graph_to_draw = graph_to_draw.copy()

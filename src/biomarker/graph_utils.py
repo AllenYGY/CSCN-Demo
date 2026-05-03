@@ -151,6 +151,35 @@ def build_biomarker_dag(
     return filtered_graph, confounders_by_treatment
 
 
+def build_biomarker_ego_graph(
+    global_graph,
+    highlighted_treatments,
+    outcome_node="DISEASE",
+    neighbor_depth=1,
+    connect_treatments_to_outcome=True,
+):
+    undirected_graph = global_graph.to_undirected()
+    filter_nodes = set(highlighted_treatments)
+
+    for biomarker in highlighted_treatments:
+        if biomarker not in undirected_graph:
+            continue
+        lengths = nx.single_source_shortest_path_length(
+            undirected_graph,
+            source=biomarker,
+            cutoff=neighbor_depth,
+        )
+        filter_nodes.update(lengths.keys())
+
+    filtered_graph = filter_graph_nodes(global_graph, sorted(filter_nodes))
+    filtered_graph.add_node(outcome_node)
+    if connect_treatments_to_outcome:
+        for treatment in highlighted_treatments:
+            if treatment in filtered_graph:
+                filtered_graph.add_edge(treatment, outcome_node)
+    return filtered_graph
+
+
 def _resolve_highlighted_dag_path(save_path):
     output_path = Path(save_path)
     if output_path.suffix.lower() != ".png":
