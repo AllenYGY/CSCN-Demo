@@ -23,6 +23,7 @@ from cscn.postprocess import run_ckm
 from cscn.viewer import discover_run_roots, load_run_graph, scan_run_root
 from cscn.workflow import aggregate_run, load_prepared_run, prepare_run, run_biomarker_workflow, run_cscn
 from scripts.analysis.compare_seqfish_ckm_clustering import run_analysis
+from scripts.analysis.compare_scp2046_ckm_clustering import run_analysis as run_scp2046_analysis
 from tests.support.fake_graph import FakeGraph
 
 
@@ -557,7 +558,108 @@ def test_spatial_weighted_counts_support_knn_and_radius():
     )
     radius_cscn.run_core(matrix, spatial_coords=coords)
     radius_count = radius_cscn.get_weighted_conditional_counts({0}, key_cell_idx=0)
-    assert radius_count == 2.0
+    assert abs(radius_count - (1.0 + 0.6065306597)) < 1e-6
+
+
+def test_spatial_weighted_counts_drops_non_neighbors_and_ignores_lambda_expr():
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    from cscn.core import CSCN
+
+    matrix = pd.DataFrame(
+        [
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [2.0, 2.0],
+        ]
+    ).to_numpy()
+    coords = pd.DataFrame(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [5.0, 0.0],
+        ]
+    ).to_numpy()
+
+    cscn = CSCN(
+        sigmoid_score=1.0,
+        spatial_enabled=True,
+        spatial_strategy="weighted_counts",
+        spatial_mode="knn",
+        spatial_k=2,
+        spatial_kernel="gaussian",
+        spatial_lambda_expr=0.9,
+        spatial_min_effective_neighbors=1,
+    )
+    cscn.run_core(matrix, spatial_coords=coords)
+    neighbor_indices, weight_lookup = cscn.get_spatial_weights(0)
+
+    assert neighbor_indices.tolist() == [0, 1]
+    assert abs(weight_lookup[0] - 1.0) < 1e-6
+    assert abs(weight_lookup[1] - 0.6065306597) < 1e-6
+    assert weight_lookup[2] == 0.0
+    assert abs(cscn.get_weighted_conditional_counts(set(), key_cell_idx=0) - (1.0 + 0.6065306597)) < 1e-6
+
+
+def test_weighted_counts_run_pc_uses_local_subset_with_gaussian(monkeypatch):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    from cscn.core import CSCN
+
+    matrix = pd.DataFrame(
+        [
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [2.0, 2.0],
+            [3.0, 3.0],
+        ]
+    ).to_numpy()
+    coords = pd.DataFrame(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [4.0, 0.0],
+            [9.0, 0.0],
+        ]
+    ).to_numpy()
+
+    captured = {}
+
+    def fake_run_pc_with_local_subset(
+        self,
+        key_cell_idx,
+        subset_indices,
+        allowed_edges=None,
+        *,
+        spatial_enabled=False,
+        spatial_strategy="weighted_counts",
+        spatial_kernel=None,
+    ):
+        captured["key_cell_idx"] = key_cell_idx
+        captured["subset_indices"] = np.asarray(subset_indices).tolist()
+        captured["spatial_enabled"] = spatial_enabled
+        captured["spatial_strategy"] = spatial_strategy
+        captured["spatial_kernel"] = spatial_kernel
+        return "ok"
+
+    monkeypatch.setattr(CSCN, "_run_pc_with_local_subset", fake_run_pc_with_local_subset)
+
+    cscn = CSCN(
+        spatial_enabled=True,
+        spatial_strategy="weighted_counts",
+        spatial_mode="knn",
+        spatial_k=2,
+        spatial_kernel="binary",
+    )
+    cscn.run_core(matrix, spatial_coords=coords)
+    result = cscn.run_pc(0)
+
+    assert result == "ok"
+    assert captured["key_cell_idx"] == 0
+    assert captured["subset_indices"] == [0, 1]
+    assert captured["spatial_enabled"] is True
+    assert captured["spatial_strategy"] == "weighted_counts"
+    assert captured["spatial_kernel"] == "gaussian"
 
 
 def test_local_knn_subset_indices_and_local_df_are_correct():
@@ -823,6 +925,95 @@ def test_compare_seqfish_ckm_clustering_script_outputs_tables(tmp_path):
     assert assignments.columns.tolist() == [
         "cell_id",
         "cell_class_name",
+        "expr_cluster",
+        "ckm_weighted_cluster",
+        "ckm_local_knn_cluster",
+    ]
+    assert (output_dir / "expr_features.csv").is_file()
+    assert (output_dir / "ckm_weighted_features.csv").is_file()
+    assert (output_dir / "ckm_local_knn_features.csv").is_file()
+
+
+def test_compare_scp2046_ckm_clustering_supports_genes_by_cells_and_zones(tmp_path):
+    pytest.importorskip("scipy")
+    pytest.importorskip("sklearn")
+    pytest.importorskip("pgmpy")
+
+    weighted_config_path = build_table_config(
+        tmp_path / "weighted_scp",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+    )
+    local_config_path = build_table_config(
+        tmp_path / "local_scp",
+        sample_per_group=None,
+        top_n=2,
+        include_spatial=True,
+        spatial_overrides=[
+            "    enabled: true",
+            "    strategy: local_knn_subset",
+            "    mode: knn",
+            "    k: 2",
+            "    kernel: gaussian",
+            "    lambda_expr: 0.0",
+            "    min_effective_neighbors: 1",
+        ],
+    )
+
+    weighted_config = load_config(weighted_config_path)
+    local_config = load_config(local_config_path)
+    prepare_run(weighted_config)
+    prepare_run(local_config)
+    run_cscn(weighted_config)
+    run_cscn(local_config)
+
+    weighted_layout = RunLayout.from_config(weighted_config)
+    local_layout = RunLayout.from_config(local_config)
+
+    expr_path = tmp_path / "scp_expr.csv"
+    expr_path.write_text(
+        "\n".join(
+            [
+                "GENE,c1,c2,c3,c4",
+                "G2,10,20,30,40",
+                "G3,1,1,10,10",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    metadata_path = tmp_path / "scp_metadata.csv"
+    metadata_path.write_text(
+        "\n".join(
+            [
+                "cell_id,zones",
+                "c1,Alb_high",
+                "c2,Alb_high",
+                "c3,inter",
+                "c4,inter",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "scp_analysis"
+    run_scp2046_analysis(
+        expr_path=expr_path,
+        metadata_path=metadata_path,
+        weighted_run_dir=weighted_layout.run_dir,
+        comparison_run_dir=local_layout.run_dir,
+        output_dir=output_dir,
+        enable_umap=False,
+    )
+
+    metrics = pd.read_csv(output_dir / "clustering_metrics.csv")
+    assignments = pd.read_csv(output_dir / "cell_assignments.csv")
+    assert set(metrics["representation"]) == {"expr", "ckm_weighted", "ckm_local_knn"}
+    assert assignments.columns.tolist() == [
+        "cell_id",
+        "zones",
         "expr_cluster",
         "ckm_weighted_cluster",
         "ckm_local_knn_cluster",

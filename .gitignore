@@ -38,6 +38,9 @@ data/
 results/
 result-interpreter/
 runs/
+*.log
+env.md
+config/seqfish/analysis_ckm_compare/
 
 # Local Codex metadata
 .codex

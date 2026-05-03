@@ -288,7 +288,15 @@ class CSCN:
         local_key_idx = int(local_key_matches[0])
         return pd.DataFrame(local_matrix, index=range(local_matrix.shape[0])), local_key_idx
 
-    def _build_local_worker(self, subset_indices, allowed_edges=None):
+    def _build_local_worker(
+        self,
+        subset_indices,
+        allowed_edges=None,
+        *,
+        spatial_enabled=False,
+        spatial_strategy="weighted_counts",
+        spatial_kernel=None,
+    ):
         local_worker = CSCN(
             output_dir=self.output_dir,
             sigmoid_score=self.sigmoid_score,
@@ -299,12 +307,12 @@ class CSCN:
             debug=self.debug,
             show_progress=self.show_progress,
             progress_interval=self.progress_interval,
-            spatial_enabled=False,
-            spatial_strategy="weighted_counts",
+            spatial_enabled=spatial_enabled,
+            spatial_strategy=spatial_strategy,
             spatial_mode=self.spatial_mode,
             spatial_k=self.spatial_k,
             spatial_radius=self.spatial_radius,
-            spatial_kernel=self.spatial_kernel,
+            spatial_kernel=spatial_kernel or self.spatial_kernel,
             spatial_bandwidth=self.spatial_bandwidth,
             spatial_lambda_expr=self.spatial_lambda_expr,
             spatial_min_effective_neighbors=self.spatial_min_effective_neighbors,
@@ -350,13 +358,17 @@ class CSCN:
             return result
 
         indices, distances = cached
-        if len(indices) <= 1:
-            weight_lookup = np.ones(n_cells, dtype=np.float64)
-            result = (np.arange(n_cells, dtype=np.int64), weight_lookup)
+        if len(indices) == 0:
+            weight_lookup = np.zeros(n_cells, dtype=np.float64)
+            result = (indices, weight_lookup)
             self.spatial_weight_cache[key_cell_idx] = result
             return result
 
-        if self.spatial_kernel == "binary":
+        effective_kernel = (
+            "gaussian" if self.spatial_strategy == "weighted_counts" else self.spatial_kernel
+        )
+
+        if effective_kernel == "binary":
             neighbor_weights = np.ones(len(indices), dtype=np.float64)
         else:
             bandwidth = self.spatial_bandwidth
@@ -369,11 +381,10 @@ class CSCN:
             if max_weight > 0:
                 neighbor_weights = neighbor_weights / max_weight
 
-        weight_lookup = np.full(n_cells, float(self.spatial_lambda_expr), dtype=np.float64)
-        weight_lookup[indices] = (
-            float(self.spatial_lambda_expr)
-            + (1.0 - float(self.spatial_lambda_expr)) * neighbor_weights
-        )
+        # weighted_counts keeps only the selected spatial neighbors; non-neighbors
+        # contribute zero rather than a lambda-mixed background weight.
+        weight_lookup = np.zeros(n_cells, dtype=np.float64)
+        weight_lookup[indices] = neighbor_weights
         result = (indices, weight_lookup)
         self.spatial_weight_cache[key_cell_idx] = result
         return result
@@ -552,12 +563,36 @@ class CSCN:
             show_progress=self.show_progress,
         )
 
-    def _run_pc_with_local_subset(self, key_cell_idx, subset_indices, allowed_edges=None):
-        local_worker = self._build_local_worker(subset_indices, allowed_edges=allowed_edges)
+    def _run_pc_with_local_subset(
+        self,
+        key_cell_idx,
+        subset_indices,
+        allowed_edges=None,
+        *,
+        spatial_enabled=False,
+        spatial_strategy="weighted_counts",
+        spatial_kernel=None,
+    ):
+        local_worker = self._build_local_worker(
+            subset_indices,
+            allowed_edges=allowed_edges,
+            spatial_enabled=spatial_enabled,
+            spatial_strategy=spatial_strategy,
+            spatial_kernel=spatial_kernel,
+        )
         local_key_idx = int(np.where(np.asarray(subset_indices) == key_cell_idx)[0][0])
         return local_worker._estimate_pc(local_key_idx)
 
     def run_pc(self, key_cell_idx):
+        if self.spatial_enabled and self.spatial_strategy == "weighted_counts":
+            subset_indices = self.get_local_subset_indices(key_cell_idx)
+            return self._run_pc_with_local_subset(
+                key_cell_idx,
+                subset_indices,
+                spatial_enabled=True,
+                spatial_strategy="weighted_counts",
+                spatial_kernel="gaussian",
+            )
         if self.spatial_enabled and self.spatial_strategy == "adaptive_block_prior":
             allowed_edges = self.adaptive_allowed_edges.get(key_cell_idx)
             if not allowed_edges and self.adaptive_fallback_to_local_knn_subset:
