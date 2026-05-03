@@ -71,6 +71,11 @@ def parse_args():
         help="Outcome node name to append to the graph. Default: DISEASE",
     )
     parser.add_argument(
+        "--hide-outcome-node",
+        action="store_true",
+        help="Do not render the outcome node or its edges in the final plot.",
+    )
+    parser.add_argument(
         "--title",
         default=None,
         help="Optional plot title. Defaults to '<dataset-name> Biomarker DAG'.",
@@ -315,6 +320,7 @@ def main() -> None:
     log(dataset_name, f"gene list path: {gene_list_path}")
     log(dataset_name, f"biomarkers path: {biomarkers_path}")
     log(dataset_name, f"output path: {output_path}")
+    log(dataset_name, f"hide outcome node: {args.hide_outcome_node}")
     log(dataset_name, f"graph scope: {args.graph_scope}")
     log(dataset_name, f"neighbor depth: {args.neighbor_depth}")
     log(dataset_name, f"layout: {args.layout}")
@@ -388,6 +394,11 @@ def main() -> None:
         for treatment in biomarkers:
             if treatment in graph_to_draw:
                 graph_to_draw.add_edge(treatment, args.outcome_node)
+
+    if args.hide_outcome_node and args.outcome_node in graph_to_draw:
+        graph_to_draw = graph_to_draw.copy()
+        graph_to_draw.remove_node(args.outcome_node)
+        outcome_nodes = []
 
     if args.ignore_isolated_nodes:
         graph_to_draw = filter_isolated_nodes(
