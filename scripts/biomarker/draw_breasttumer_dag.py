@@ -94,6 +94,18 @@ def parse_args():
         help="Random seed used by spring layout.",
     )
     parser.add_argument(
+        "--max-nodes-per-ring",
+        type=int,
+        default=20,
+        help="Maximum base node count per concentric ring before opening a new ring. Default: 20",
+    )
+    parser.add_argument(
+        "--ring-growth-factor",
+        type=float,
+        default=1.4,
+        help="Capacity growth factor for outer concentric rings. Default: 1.4",
+    )
+    parser.add_argument(
         "--label-scope",
         choices=("all", "biomarkers", "none"),
         default="biomarkers",
@@ -250,6 +262,8 @@ def main() -> None:
     log(dataset_name, f"output path: {output_path}")
     log(dataset_name, f"graph scope: {args.graph_scope}")
     log(dataset_name, f"layout: {args.layout}")
+    log(dataset_name, f"max nodes per ring: {args.max_nodes_per_ring}")
+    log(dataset_name, f"ring growth factor: {args.ring_growth_factor}")
     log(dataset_name, f"label scope: {args.label_scope}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
 
@@ -310,6 +324,8 @@ def main() -> None:
         layout=args.layout,
         layout_seed=args.layout_seed,
         label_scope=args.label_scope,
+        max_nodes_per_ring=args.max_nodes_per_ring,
+        ring_growth_factor=args.ring_growth_factor,
         size_by=args.size_by,
         min_node_size=args.min_node_size,
         max_node_size=args.max_node_size,

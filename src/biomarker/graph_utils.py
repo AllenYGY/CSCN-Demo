@@ -151,7 +151,13 @@ def _resolve_legend_path(output_path):
     return output_path.with_name(f"{output_path.stem}_legend{output_path.suffix}")
 
 
-def _resolve_concentric_layout(global_graph, treatment_nodes, outcome_nodes):
+def _resolve_concentric_layout(
+    global_graph,
+    treatment_nodes,
+    outcome_nodes,
+    max_nodes_per_ring=20,
+    ring_growth_factor=1.4,
+):
     import math
 
     outcome_set = set(outcome_nodes)
@@ -183,25 +189,44 @@ def _resolve_concentric_layout(global_graph, treatment_nodes, outcome_nodes):
     for node in outcome_set:
         pos[node] = (0.0, 0.0)
 
-    if treatment_set:
-        treatment_nodes_sorted = sorted(treatment_set)
-        radius = 1.4
-        for idx, node in enumerate(treatment_nodes_sorted):
-            angle = 2.0 * math.pi * idx / len(treatment_nodes_sorted)
-            pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
+    def place_nodes_on_rings(nodes, start_radius, base_capacity):
+        nodes = sorted(nodes)
+        if not nodes:
+            return start_radius
 
-    layer_radii = {
-        1: 3.0,
-        2: 4.6,
-        3: 6.2,
-    }
-    for layer, radius in layer_radii.items():
-        layer_nodes = sorted(distance_layers[layer])
+        ring_index = 0
+        cursor = 0
+        while cursor < len(nodes):
+            capacity = max(
+                base_capacity,
+                int(round(base_capacity * (ring_growth_factor**ring_index))),
+            )
+            ring_nodes = nodes[cursor : cursor + capacity]
+            radius = start_radius + ring_index * 1.6
+            for idx, node in enumerate(ring_nodes):
+                angle = 2.0 * math.pi * idx / len(ring_nodes)
+                pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
+            cursor += len(ring_nodes)
+            ring_index += 1
+        return start_radius + max(0, ring_index - 1) * 1.6
+
+    outer_radius = place_nodes_on_rings(
+        treatment_set,
+        start_radius=1.4,
+        base_capacity=max_nodes_per_ring,
+    )
+
+    layer_start_radius = outer_radius + 1.6
+    for layer in (1, 2, 3):
+        layer_nodes = distance_layers[layer]
         if not layer_nodes:
             continue
-        for idx, node in enumerate(layer_nodes):
-            angle = 2.0 * math.pi * idx / len(layer_nodes)
-            pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
+        outer_radius = place_nodes_on_rings(
+            layer_nodes,
+            start_radius=layer_start_radius,
+            base_capacity=max_nodes_per_ring,
+        )
+        layer_start_radius = outer_radius + 1.6
 
     return pos
 
@@ -212,6 +237,8 @@ def _resolve_layout(
     layout_seed=42,
     treatment_nodes=None,
     outcome_nodes=None,
+    max_nodes_per_ring=20,
+    ring_growth_factor=1.4,
 ):
     if layout == "spring":
         return nx.spring_layout(global_graph, seed=layout_seed)
@@ -224,6 +251,8 @@ def _resolve_layout(
             global_graph,
             treatment_nodes=treatment_nodes or [],
             outcome_nodes=outcome_nodes or [],
+            max_nodes_per_ring=max_nodes_per_ring,
+            ring_growth_factor=ring_growth_factor,
         )
     if layout == "dag":
         layout_graph = global_graph.copy()
@@ -361,6 +390,8 @@ def draw_global_network_highlighted(
     layout="spring",
     layout_seed=42,
     label_scope="all",
+    max_nodes_per_ring=20,
+    ring_growth_factor=1.4,
     size_by=None,
     min_node_size=700,
     max_node_size=1400,
@@ -372,6 +403,8 @@ def draw_global_network_highlighted(
         layout_seed=layout_seed,
         treatment_nodes=treatment_nodes,
         outcome_nodes=outcome_nodes,
+        max_nodes_per_ring=max_nodes_per_ring,
+        ring_growth_factor=ring_growth_factor,
     )
     plt.figure(figsize=(14, 10))
 

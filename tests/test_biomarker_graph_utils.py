@@ -139,6 +139,28 @@ def test_concentric_layout_separates_first_and_second_hop_neighbors():
     assert abs((pos["N2"][0] ** 2 + pos["N2"][1] ** 2) - 4.6**2) < 1e-6
 
 
+def test_concentric_layout_opens_new_ring_when_capacity_is_exceeded():
+    graph = nx.DiGraph()
+    graph.add_node("DISEASE")
+    graph.add_nodes_from(["B1", "B2", "B3"])
+
+    pos = _resolve_layout(
+        graph,
+        layout="concentric",
+        treatment_nodes=["B1", "B2", "B3"],
+        outcome_nodes=["DISEASE"],
+        max_nodes_per_ring=2,
+        ring_growth_factor=1.0,
+    )
+
+    radii = sorted(
+        round((pos[node][0] ** 2 + pos[node][1] ** 2) ** 0.5, 3)
+        for node in ["B1", "B2", "B3"]
+    )
+    assert radii.count(1.4) == 2
+    assert radii.count(3.0) == 1
+
+
 def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes():
     graph = nx.DiGraph()
     graph.add_nodes_from(["DISEASE", "B1", "O1"])
