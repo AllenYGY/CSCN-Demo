@@ -156,9 +156,28 @@ def _resolve_concentric_layout(global_graph, treatment_nodes, outcome_nodes):
 
     outcome_set = set(outcome_nodes)
     treatment_set = set(treatment_nodes) - outcome_set
-    other_nodes = [
-        node for node in global_graph.nodes() if node not in outcome_set and node not in treatment_set
-    ]
+    undirected_graph = global_graph.to_undirected()
+    distance_layers = {1: [], 2: [], 3: []}
+
+    for node in global_graph.nodes():
+        if node in outcome_set or node in treatment_set:
+            continue
+
+        min_distance = None
+        for biomarker in treatment_set:
+            try:
+                distance = nx.shortest_path_length(undirected_graph, source=biomarker, target=node)
+            except nx.NetworkXNoPath:
+                continue
+            if min_distance is None or distance < min_distance:
+                min_distance = distance
+
+        if min_distance is None or min_distance >= 3:
+            distance_layers[3].append(node)
+        elif min_distance == 1:
+            distance_layers[1].append(node)
+        else:
+            distance_layers[2].append(node)
 
     pos = {}
     for node in outcome_set:
@@ -171,11 +190,17 @@ def _resolve_concentric_layout(global_graph, treatment_nodes, outcome_nodes):
             angle = 2.0 * math.pi * idx / len(treatment_nodes_sorted)
             pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
 
-    if other_nodes:
-        other_nodes_sorted = sorted(other_nodes)
-        radius = 3.0
-        for idx, node in enumerate(other_nodes_sorted):
-            angle = 2.0 * math.pi * idx / len(other_nodes_sorted)
+    layer_radii = {
+        1: 3.0,
+        2: 4.6,
+        3: 6.2,
+    }
+    for layer, radius in layer_radii.items():
+        layer_nodes = sorted(distance_layers[layer])
+        if not layer_nodes:
+            continue
+        for idx, node in enumerate(layer_nodes):
+            angle = 2.0 * math.pi * idx / len(layer_nodes)
             pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
 
     return pos
@@ -406,6 +431,8 @@ def draw_global_network_highlighted(
         label_nodes = {node: node for node in global_graph.nodes()}
     elif label_scope == "biomarkers":
         visible = set(treatment_nodes) | set(outcome_nodes)
+        if layout == "concentric":
+            visible = set(global_graph.nodes())
         label_nodes = {node: node for node in global_graph.nodes() if node in visible}
     elif label_scope == "none":
         label_nodes = {}

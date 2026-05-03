@@ -122,6 +122,23 @@ def test_concentric_layout_places_outcome_center_and_treatments_inside_other_nod
     assert abs((pos["O1"][0] ** 2 + pos["O1"][1] ** 2) - 3.0**2) < 1e-6
 
 
+def test_concentric_layout_separates_first_and_second_hop_neighbors():
+    graph = nx.DiGraph()
+    graph.add_edge("B1", "N1")
+    graph.add_edge("N1", "N2")
+    graph.add_node("DISEASE")
+
+    pos = _resolve_layout(
+        graph,
+        layout="concentric",
+        treatment_nodes=["B1"],
+        outcome_nodes=["DISEASE"],
+    )
+
+    assert abs((pos["N1"][0] ** 2 + pos["N1"][1] ** 2) - 3.0**2) < 1e-6
+    assert abs((pos["N2"][0] ** 2 + pos["N2"][1] ** 2) - 4.6**2) < 1e-6
+
+
 def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes():
     graph = nx.DiGraph()
     graph.add_nodes_from(["DISEASE", "B1", "O1"])
