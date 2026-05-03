@@ -1,0 +1,39 @@
+run_name: gse164378_3p_rna_adt_joint
+
+input:
+  format: tables
+  expr_path: ../../data/GSE164378/cscn_inputs/gse164378_3p_rna_adt_joint_expression.csv.gz
+  metadata_path: ../../data/GSE164378/cscn_inputs/gse164378_3p_metadata.csv.gz
+  expr_orientation: cells_by_genes
+  expr_cell_id_column: cell_id
+  metadata_cell_id_column: cell_id
+
+preprocess:
+  normalize: false
+  log1p: false
+  sample_per_group: 1000
+  sample_by_obs_key: celltype.l1
+  random_seed: 42
+  gene_selection:
+    top_n: 150
+
+run:
+  output_dir: ../../runs
+  max_workers: 4
+  sigmoid_score: 0.1
+  significance_level: 0.05
+  max_cond_vars: 20
+  use_bitmap: true
+
+aggregate:
+  consensus: true
+  consensus_threshold_mode: auto
+
+biomarker:
+  enabled: false
+
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  reload: false

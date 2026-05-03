@@ -108,6 +108,7 @@ class PreprocessConfig:
     normalize: bool = True
     log1p: bool = True
     sample_per_group: int | None = None
+    sample_by_obs_key: str | None = None
     random_seed: int = 42
     gene_selection: GeneSelectionConfig = field(default_factory=GeneSelectionConfig)
 
@@ -267,11 +268,16 @@ def load_config(config_path: str | Path) -> CSCNConfig:
             if preprocess_raw.get("sample_per_group") in (None, "")
             else int(preprocess_raw["sample_per_group"])
         ),
+        sample_by_obs_key=_get_string(preprocess_raw, "sample_by_obs_key"),
         random_seed=int(preprocess_raw.get("random_seed") or 42),
         gene_selection=gene_selection,
     )
     if preprocess.sample_per_group is not None and preprocess.sample_per_group <= 0:
         raise ConfigError("`preprocess.sample_per_group` must be positive.")
+    if preprocess.sample_by_obs_key and preprocess.sample_per_group is None:
+        raise ConfigError(
+            "`preprocess.sample_by_obs_key` requires `preprocess.sample_per_group`."
+        )
     if preprocess.gene_selection.top_n <= 0:
         raise ConfigError("`preprocess.gene_selection.top_n` must be positive.")
 

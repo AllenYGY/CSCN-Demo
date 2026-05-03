@@ -212,6 +212,100 @@ def test_prepare_run_accepts_blank_metadata_cell_id_column(tmp_path):
     assert summary.groups == {"A": 2}
 
 
+def test_prepare_run_supports_stratified_sampling_without_splitting_groups(tmp_path):
+    expr_path = tmp_path / "expression.csv"
+    metadata_path = tmp_path / "metadata.csv"
+    expr_path.write_text(
+        "\n".join(
+            [
+                "cell_id,G1,G2,G3",
+                "c1,1,10,1",
+                "c2,2,20,1",
+                "c3,3,30,2",
+                "c4,4,40,2",
+                "c5,5,50,3",
+                "c6,6,60,3",
+                "c7,7,70,4",
+                "c8,8,80,4",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    metadata_path.write_text(
+        "\n".join(
+            [
+                "cell_id,condition,celltype",
+                "c1,all,T",
+                "c2,all,T",
+                "c3,all,B",
+                "c4,all,B",
+                "c5,all,NK",
+                "c6,all,NK",
+                "c7,all,Mono",
+                "c8,all,Mono",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "run_name: stratified_sampling",
+                "input:",
+                "  format: tables",
+                "  expr_path: expression.csv",
+                "  metadata_path: metadata.csv",
+                "  expr_orientation: cells_by_genes",
+                "  expr_cell_id_column: cell_id",
+                "  metadata_cell_id_column: cell_id",
+                "preprocess:",
+                "  sample_per_group: 1",
+                "  sample_by_obs_key: celltype",
+                "  random_seed: 7",
+                "  gene_selection:",
+                "    top_n: 2",
+                "run:",
+                "  output_dir: runs",
+                "aggregate:",
+                "  consensus: false",
+                "biomarker:",
+                "  enabled: false",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    summary = prepare_run(config)
+    layout = RunLayout.from_config(config)
+    sampled_metadata = pd.read_csv(layout.cell_metadata_path)
+
+    assert summary.groups == {"all": 4}
+    assert sampled_metadata["cscn_group"].unique().tolist() == ["all"]
+    assert sampled_metadata["celltype"].value_counts().to_dict() == {
+        "T": 1,
+        "B": 1,
+        "NK": 1,
+        "Mono": 1,
+    }
+
+
+def test_config_rejects_sample_by_obs_key_without_sample_per_group(tmp_path):
+    config_path = build_table_config(tmp_path, sample_per_group=None, top_n=2)
+    config_text = Path(config_path).read_text(encoding="utf-8").replace(
+        "preprocess:\n",
+        "preprocess:\n  sample_by_obs_key: cell_class_name\n",
+    )
+    Path(config_path).write_text(config_text, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="sample_by_obs_key"):
+        load_config(config_path)
+
+
 def test_spatial_config_parses_and_prepare_persists_coords(tmp_path):
     config_path = build_table_config(tmp_path, sample_per_group=None, top_n=2, include_spatial=True)
 

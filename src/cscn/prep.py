@@ -114,6 +114,8 @@ def _resolve_group_labels(dataset: LoadedDataset, config: CSCNConfig) -> dict[st
 def _sample_cells_per_group(
     group_cells: dict[str, list[str]],
     sample_per_group: int | None,
+    sample_by_obs_key: str | None,
+    metadata: pd.DataFrame,
     random_seed: int,
 ) -> dict[str, list[str]]:
     if sample_per_group is None:
@@ -122,6 +124,32 @@ def _sample_cells_per_group(
     rng = np.random.default_rng(random_seed)
     sampled: dict[str, list[str]] = {}
     for group_key, cell_ids in group_cells.items():
+        if sample_by_obs_key:
+            if sample_by_obs_key not in metadata.columns:
+                raise ConfigError(
+                    f"Metadata is missing the configured stratified sampling column: "
+                    f"{sample_by_obs_key}"
+                )
+            group_meta = metadata.loc[cell_ids].copy()
+            strata = group_meta[sample_by_obs_key].astype(str)
+            ordered_picks: list[str] = []
+            for stratum, frame in group_meta.groupby(strata, sort=False):
+                stratum_cell_ids = frame.index.astype(str).tolist()
+                if len(stratum_cell_ids) < sample_per_group:
+                    raise ConfigError(
+                        f"Group {group_key} / stratum {stratum} has only "
+                        f"{len(stratum_cell_ids)} cells, fewer than "
+                        f"sample_per_group={sample_per_group}."
+                    )
+                picks = rng.choice(
+                    np.asarray(stratum_cell_ids),
+                    size=sample_per_group,
+                    replace=False,
+                )
+                ordered_picks.extend(str(item) for item in picks.tolist())
+            sampled[group_key] = ordered_picks
+            continue
+
         if len(cell_ids) < sample_per_group:
             raise ConfigError(
                 f"Group {group_key} has only {len(cell_ids)} cells, fewer than "
@@ -198,6 +226,8 @@ def prepare_run_inputs(dataset: LoadedDataset, config: CSCNConfig) -> PreparedRu
     sampled_cells = _sample_cells_per_group(
         group_cells=grouped_cells,
         sample_per_group=config.preprocess.sample_per_group,
+        sample_by_obs_key=config.preprocess.sample_by_obs_key,
+        metadata=dataset.metadata,
         random_seed=config.preprocess.random_seed,
     )
 

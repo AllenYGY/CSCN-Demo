@@ -225,6 +225,14 @@ normalized = matrix / row_sum * 1e6
 - 行为：对每个 group 随机无放回采样固定数量细胞
 - 约束：必须为正整数；如果某个 group 细胞数不足，会直接报错
 
+#### `preprocess.sample_by_obs_key`
+
+- 类型：`string | null`
+- 默认：`null`
+- 行为：如果设置，则在每个 CSCN group 内，按该 metadata 列分层抽样
+- 要求：必须同时设置 `preprocess.sample_per_group`
+- 注意：这只改变采样策略，不会改变 CSCN 的运行分组；运行分组仍由 `input.obs_group_key` 决定
+
 #### `preprocess.random_seed`
 
 - 类型：`int`
