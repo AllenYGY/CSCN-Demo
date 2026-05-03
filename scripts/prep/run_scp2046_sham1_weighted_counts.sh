@@ -112,6 +112,9 @@ ordered_cols = [id_to_col[cid] for cid in ordered_cell_ids]
 if not ordered_cell_ids:
     raise SystemExit("No overlapping cell ids between expression and spatial_s1.csv")
 
+k_neighbors = max(1, int(np.ceil(len(ordered_cell_ids) * 0.2)))
+print(f"[SCP2046 weighted_counts] aligned cells={len(ordered_cell_ids)} k_neighbors={k_neighbors}")
+
 mat = mat[:, ordered_cols]
 mean = np.asarray(mat.mean(axis=1)).ravel()
 mean_sq = np.asarray(mat.power(2).mean(axis=1)).ravel()
@@ -183,9 +186,9 @@ run:
     enabled: true
     strategy: {strategy}
     mode: knn
-    k: 8
+    k: {k_neighbors}
     kernel: gaussian
-    lambda_expr: 0.2
+    lambda_expr: 0.0
     min_effective_neighbors: 15
 
 aggregate:

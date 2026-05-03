@@ -112,6 +112,9 @@ ordered_cols = [id_to_col[cid] for cid in ordered_cell_ids]
 if not ordered_cell_ids:
     raise SystemExit("No overlapping cell ids between expression and spatial_s1.csv")
 
+k_neighbors = max(1, int(np.ceil(len(ordered_cell_ids) * 0.2)))
+print(f"[SCP2046 local_knn_subset] aligned cells={len(ordered_cell_ids)} k_neighbors={k_neighbors}")
+
 mat = mat[:, ordered_cols]
 mean = np.asarray(mat.mean(axis=1)).ravel()
 mean_sq = np.asarray(mat.power(2).mean(axis=1)).ravel()
@@ -171,7 +174,7 @@ preprocess:
 
 run:
   output_dir: {base / "runs"}
-  max_workers: 4
+  max_workers: 120
   sigmoid_score: 0.1
   significance_level: 0.05
   max_cond_vars: 10
@@ -183,7 +186,7 @@ run:
     enabled: true
     strategy: {strategy}
     mode: knn
-    k: 8
+    k: {k_neighbors}
     kernel: gaussian
     lambda_expr: 0.2
     min_effective_neighbors: 15
