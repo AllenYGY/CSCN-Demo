@@ -332,6 +332,7 @@ def draw_global_network_highlighted(
     title="Biomarker DAG",
     layout="spring",
     layout_seed=42,
+    label_scope="all",
     size_by=None,
     min_node_size=700,
     max_node_size=1400,
@@ -397,13 +398,28 @@ def draw_global_network_highlighted(
         edge_color="dimgray",
         connectionstyle="arc3,rad=0.04",
     )
-    nx.draw_networkx_labels(
-        global_graph,
-        pos,
-        font_size=10,
-        font_color="dimgray",
-        font_family="sans-serif",
-    )
+    label_nodes = {}
+    if label_scope == "all":
+        label_nodes = {node: node for node in global_graph.nodes()}
+    elif label_scope == "biomarkers":
+        visible = set(treatment_nodes) | set(outcome_nodes)
+        label_nodes = {node: node for node in global_graph.nodes() if node in visible}
+    elif label_scope == "none":
+        label_nodes = {}
+    else:
+        raise ValueError(
+            f"Unsupported label_scope '{label_scope}'. Use one of: all, biomarkers, none."
+        )
+
+    if label_nodes:
+        nx.draw_networkx_labels(
+            global_graph,
+            pos,
+            labels=label_nodes,
+            font_size=10,
+            font_color="dimgray",
+            font_family="sans-serif",
+        )
 
     plt.title(title, fontsize=20, fontweight="bold", color="dimgray")
     plt.axis("off")

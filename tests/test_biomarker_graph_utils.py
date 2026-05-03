@@ -119,3 +119,19 @@ def test_concentric_layout_places_outcome_center_and_treatments_inside_other_nod
     assert pos["DISEASE"] == (0.0, 0.0)
     assert abs((pos["B1"][0] ** 2 + pos["B1"][1] ** 2) - 1.4**2) < 1e-6
     assert abs((pos["O1"][0] ** 2 + pos["O1"][1] ** 2) - 3.0**2) < 1e-6
+
+
+def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(["DISEASE", "B1", "O1"])
+
+    pos = _resolve_layout(
+        graph,
+        layout="concentric",
+        treatment_nodes=["B1"],
+        outcome_nodes=["DISEASE"],
+    )
+
+    assert "DISEASE" in pos
+    assert "B1" in pos
+    assert "O1" in pos

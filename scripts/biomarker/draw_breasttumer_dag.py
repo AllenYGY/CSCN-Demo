@@ -76,10 +76,16 @@ def parse_args():
         help="Optional plot title. Defaults to '<dataset-name> Biomarker DAG'.",
     )
     parser.add_argument(
+        "--graph-scope",
+        choices=("focus", "global"),
+        default="global",
+        help="Whether to render the biomarker-focused subgraph or the full global graph. Default: global",
+    )
+    parser.add_argument(
         "--layout",
         choices=("spring", "kamada_kawai", "circular", "concentric", "dag"),
-        default="spring",
-        help="Graph layout for visualization. Default: spring",
+        default="concentric",
+        help="Graph layout for visualization. Default: concentric",
     )
     parser.add_argument(
         "--layout-seed",
@@ -88,10 +94,16 @@ def parse_args():
         help="Random seed used by spring layout.",
     )
     parser.add_argument(
+        "--label-scope",
+        choices=("all", "biomarkers", "none"),
+        default="biomarkers",
+        help="Which nodes get text labels. Default: biomarkers",
+    )
+    parser.add_argument(
         "--size-by",
         choices=("degree", "in_degree", "out_degree"),
-        default=None,
-        help="Scale node size by a graph degree metric. Default: fixed sizes by node role.",
+        default="degree",
+        help="Scale node size by a graph degree metric. Default: degree",
     )
     parser.add_argument(
         "--min-node-size",
@@ -236,7 +248,9 @@ def main() -> None:
     log(dataset_name, f"gene list path: {gene_list_path}")
     log(dataset_name, f"biomarkers path: {biomarkers_path}")
     log(dataset_name, f"output path: {output_path}")
+    log(dataset_name, f"graph scope: {args.graph_scope}")
     log(dataset_name, f"layout: {args.layout}")
+    log(dataset_name, f"label scope: {args.label_scope}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
 
     if not gene_list_path.is_file():
@@ -278,14 +292,24 @@ def main() -> None:
         f"{biomarker_dag.number_of_edges()} edges, {confounder_count} unique confounders"
     )
 
+    graph_to_draw = biomarker_dag if args.graph_scope == "focus" else global_graph
+    outcome_nodes = [args.outcome_node]
+    if args.graph_scope == "global" and args.outcome_node not in graph_to_draw:
+        graph_to_draw = graph_to_draw.copy()
+        graph_to_draw.add_node(args.outcome_node)
+        for treatment in biomarkers:
+            if treatment in graph_to_draw:
+                graph_to_draw.add_edge(treatment, args.outcome_node)
+
     saved_path, legend_path = draw_global_network_highlighted(
-        biomarker_dag,
+        graph_to_draw,
         treatment_nodes=biomarkers,
-        outcome_nodes=[args.outcome_node],
+        outcome_nodes=outcome_nodes,
         save_path=str(output_path),
         title=title,
         layout=args.layout,
         layout_seed=args.layout_seed,
+        label_scope=args.label_scope,
         size_by=args.size_by,
         min_node_size=args.min_node_size,
         max_node_size=args.max_node_size,
