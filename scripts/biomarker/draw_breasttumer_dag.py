@@ -210,7 +210,7 @@ def load_group_graph(data_dir: Path, cscn_prefix: str, group: str, gene_names: l
     dags = cscn.load_all_dags()
     id2gene = {idx: gene for idx, gene in enumerate(gene_names)}
     directed_dags = map_node_id_to_gene_directed(dags, id2gene)
-    return get_global_graph(directed_dags)
+    return get_global_graph(directed_dags, all_nodes=gene_names)
 
 
 def main() -> None:
@@ -272,7 +272,7 @@ def main() -> None:
         )
         group_graphs.append(graph)
 
-    global_graph = get_global_graph(list(enumerate(group_graphs)))
+    global_graph = get_global_graph(list(enumerate(group_graphs)), all_nodes=gene_names)
     log(
         dataset_name,
         f"global graph: {global_graph.number_of_nodes()} nodes, {global_graph.number_of_edges()} edges",

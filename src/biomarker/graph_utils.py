@@ -42,9 +42,12 @@ def map_node_id_to_gene_directed(dags, id2gene):
     return new_dags
 
 
-def get_global_graph(dags):
+def get_global_graph(dags, all_nodes=None):
     global_graph = nx.DiGraph()
+    if all_nodes is not None:
+        global_graph.add_nodes_from(all_nodes)
     for _, dag in dags:
+        global_graph.add_nodes_from(dag.nodes())
         global_graph.add_edges_from(dag.edges())
     return global_graph
 
@@ -390,10 +393,10 @@ def draw_global_network_highlighted(
     nx.draw_networkx_edges(
         global_graph,
         pos,
-        width=1.4,
-        alpha=0.6,
+        width=1.8,
+        alpha=0.7,
         arrows=True,
-        arrowsize=18,
+        arrowsize=30,
         arrowstyle="-|>",
         edge_color="dimgray",
         connectionstyle="arc3,rad=0.04",

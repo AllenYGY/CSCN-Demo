@@ -18,6 +18,7 @@ from biomarker.graph_utils import (
     _resolve_legend_path,
     build_biomarker_dag,
     filter_graph_nodes,
+    get_global_graph,
     map_node_id_to_gene_directed,
 )
 
@@ -135,3 +136,13 @@ def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes()
     assert "DISEASE" in pos
     assert "B1" in pos
     assert "O1" in pos
+
+
+def test_get_global_graph_preserves_explicit_isolated_nodes():
+    dag = nx.DiGraph()
+    dag.add_edge("G1", "G2")
+
+    global_graph = get_global_graph([(0, dag)], all_nodes=["G1", "G2", "G3"])
+
+    assert set(global_graph.nodes()) == {"G1", "G2", "G3"}
+    assert ("G1", "G2") in global_graph.edges()
