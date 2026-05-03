@@ -94,6 +94,18 @@ def parse_args():
         help="Random seed used by spring layout.",
     )
     parser.add_argument(
+        "--inner-ring-radius",
+        type=float,
+        default=1.8,
+        help="Starting radius for the innermost biomarker ring in concentric layout. Default: 1.8",
+    )
+    parser.add_argument(
+        "--ring-gap",
+        type=float,
+        default=2.0,
+        help="Radial gap between concentric rings. Default: 2.0",
+    )
+    parser.add_argument(
         "--inner-ring-max-nodes",
         type=int,
         default=12,
@@ -274,6 +286,8 @@ def main() -> None:
     log(dataset_name, f"output path: {output_path}")
     log(dataset_name, f"graph scope: {args.graph_scope}")
     log(dataset_name, f"layout: {args.layout}")
+    log(dataset_name, f"inner ring radius: {args.inner_ring_radius}")
+    log(dataset_name, f"ring gap: {args.ring_gap}")
     log(dataset_name, f"inner ring max nodes: {args.inner_ring_max_nodes}")
     log(dataset_name, f"max nodes per ring: {args.max_nodes_per_ring}")
     log(dataset_name, f"ring growth factor: {args.ring_growth_factor}")
@@ -344,6 +358,8 @@ def main() -> None:
         layout=args.layout,
         layout_seed=args.layout_seed,
         label_scope=args.label_scope,
+        inner_ring_radius=args.inner_ring_radius,
+        ring_gap=args.ring_gap,
         inner_ring_max_nodes=args.inner_ring_max_nodes,
         max_nodes_per_ring=args.max_nodes_per_ring,
         ring_growth_factor=args.ring_growth_factor,

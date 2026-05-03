@@ -167,6 +167,8 @@ def _resolve_concentric_layout(
     global_graph,
     treatment_nodes,
     outcome_nodes,
+    inner_ring_radius=1.8,
+    ring_gap=2.0,
     inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
@@ -215,21 +217,21 @@ def _resolve_concentric_layout(
                 int(round(base_capacity * (ring_growth_factor**ring_index))),
             )
             ring_nodes = nodes[cursor : cursor + capacity]
-            radius = start_radius + ring_index * 1.6
+            radius = start_radius + ring_index * ring_gap
             for idx, node in enumerate(ring_nodes):
                 angle = 2.0 * math.pi * idx / len(ring_nodes)
                 pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
             cursor += len(ring_nodes)
             ring_index += 1
-        return start_radius + max(0, ring_index - 1) * 1.6
+        return start_radius + max(0, ring_index - 1) * ring_gap
 
     outer_radius = place_nodes_on_rings(
         treatment_set,
-        start_radius=1.4,
+        start_radius=inner_ring_radius,
         base_capacity=inner_ring_max_nodes,
     )
 
-    layer_start_radius = outer_radius + 1.6
+    layer_start_radius = outer_radius + ring_gap
     for layer in (1, 2, 3):
         layer_nodes = distance_layers[layer]
         if not layer_nodes:
@@ -239,7 +241,7 @@ def _resolve_concentric_layout(
             start_radius=layer_start_radius,
             base_capacity=max_nodes_per_ring,
         )
-        layer_start_radius = outer_radius + 1.6
+        layer_start_radius = outer_radius + ring_gap
 
     return pos
 
@@ -250,6 +252,8 @@ def _resolve_layout(
     layout_seed=42,
     treatment_nodes=None,
     outcome_nodes=None,
+    inner_ring_radius=1.8,
+    ring_gap=2.0,
     inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
@@ -265,6 +269,8 @@ def _resolve_layout(
             global_graph,
             treatment_nodes=treatment_nodes or [],
             outcome_nodes=outcome_nodes or [],
+            inner_ring_radius=inner_ring_radius,
+            ring_gap=ring_gap,
             inner_ring_max_nodes=inner_ring_max_nodes,
             max_nodes_per_ring=max_nodes_per_ring,
             ring_growth_factor=ring_growth_factor,
@@ -405,6 +411,8 @@ def draw_global_network_highlighted(
     layout="spring",
     layout_seed=42,
     label_scope="all",
+    inner_ring_radius=1.8,
+    ring_gap=2.0,
     inner_ring_max_nodes=12,
     max_nodes_per_ring=20,
     ring_growth_factor=1.4,
@@ -419,6 +427,8 @@ def draw_global_network_highlighted(
         layout_seed=layout_seed,
         treatment_nodes=treatment_nodes,
         outcome_nodes=outcome_nodes,
+        inner_ring_radius=inner_ring_radius,
+        ring_gap=ring_gap,
         inner_ring_max_nodes=inner_ring_max_nodes,
         max_nodes_per_ring=max_nodes_per_ring,
         ring_growth_factor=ring_growth_factor,

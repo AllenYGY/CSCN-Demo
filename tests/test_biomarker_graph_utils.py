@@ -185,6 +185,31 @@ def test_concentric_layout_uses_separate_inner_ring_capacity():
     assert radii.count(3.0) == 2
 
 
+def test_concentric_layout_respects_inner_radius_and_ring_gap():
+    graph = nx.DiGraph()
+    graph.add_node("DISEASE")
+    graph.add_nodes_from(["B1", "B2", "B3"])
+
+    pos = _resolve_layout(
+        graph,
+        layout="concentric",
+        treatment_nodes=["B1", "B2", "B3"],
+        outcome_nodes=["DISEASE"],
+        inner_ring_radius=2.5,
+        ring_gap=3.0,
+        inner_ring_max_nodes=2,
+        max_nodes_per_ring=20,
+        ring_growth_factor=1.0,
+    )
+
+    radii = sorted(
+        round((pos[node][0] ** 2 + pos[node][1] ** 2) ** 0.5, 3)
+        for node in ["B1", "B2", "B3"]
+    )
+    assert radii.count(2.5) == 2
+    assert radii.count(5.5) == 1
+
+
 def test_global_scope_style_targets_can_be_selected_without_labeling_all_nodes():
     graph = nx.DiGraph()
     graph.add_nodes_from(["DISEASE", "B1", "O1"])
