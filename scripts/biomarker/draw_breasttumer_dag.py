@@ -131,9 +131,15 @@ def parse_args():
     )
     parser.add_argument(
         "--label-scope",
-        choices=("all", "biomarkers", "none"),
+        choices=("all", "biomarkers", "hop1", "biomarkers_and_1hop", "none"),
         default="biomarkers",
         help="Which nodes get text labels. Default: biomarkers",
+    )
+    parser.add_argument(
+        "--edge-scope",
+        choices=("all", "biomarker"),
+        default="all",
+        help="Which edges to render. Default: all",
     )
     parser.add_argument(
         "--ignore-isolated-nodes",
@@ -318,6 +324,7 @@ def main() -> None:
     log(dataset_name, f"max nodes per ring: {args.max_nodes_per_ring}")
     log(dataset_name, f"ring growth factor: {args.ring_growth_factor}")
     log(dataset_name, f"label scope: {args.label_scope}")
+    log(dataset_name, f"edge scope: {args.edge_scope}")
     log(dataset_name, f"ignore isolated nodes: {args.ignore_isolated_nodes}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
     log(dataset_name, f"edge width: {args.edge_width}")
@@ -397,6 +404,7 @@ def main() -> None:
         layout=args.layout,
         layout_seed=args.layout_seed,
         label_scope=args.label_scope,
+        edge_scope=args.edge_scope,
         inner_ring_radius=args.inner_ring_radius,
         ring_gap=args.ring_gap,
         inner_ring_max_nodes=args.inner_ring_max_nodes,

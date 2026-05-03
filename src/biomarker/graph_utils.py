@@ -180,6 +180,36 @@ def build_biomarker_ego_graph(
     return filtered_graph
 
 
+def filter_edges_by_scope(
+    graph,
+    treatment_nodes,
+    outcome_nodes,
+    edge_scope="all",
+):
+    if edge_scope == "all":
+        return graph
+
+    treatment_set = set(treatment_nodes)
+    outcome_set = set(outcome_nodes)
+    filtered_graph = graph.__class__()
+    filtered_graph.add_nodes_from(graph.nodes(data=True))
+
+    if edge_scope == "biomarker":
+        for source, target, data in graph.edges(data=True):
+            if (
+                source in treatment_set
+                or target in treatment_set
+                or (source in outcome_set and target in treatment_set)
+                or (target in outcome_set and source in treatment_set)
+            ):
+                filtered_graph.add_edge(source, target, **data)
+        return filtered_graph
+
+    raise ValueError(
+        f"Unsupported edge_scope '{edge_scope}'. Use one of: all, biomarker."
+    )
+
+
 def _resolve_highlighted_dag_path(save_path):
     output_path = Path(save_path)
     if output_path.suffix.lower() != ".png":
@@ -440,6 +470,7 @@ def draw_global_network_highlighted(
     layout="spring",
     layout_seed=42,
     label_scope="all",
+    edge_scope="all",
     inner_ring_radius=1.8,
     ring_gap=2.0,
     inner_ring_max_nodes=12,
@@ -453,8 +484,14 @@ def draw_global_network_highlighted(
     arrow_size=24,
 ):
     output_path = _resolve_highlighted_dag_path(save_path)
-    pos = _resolve_layout(
+    graph_for_edges = filter_edges_by_scope(
         global_graph,
+        treatment_nodes=treatment_nodes,
+        outcome_nodes=outcome_nodes,
+        edge_scope=edge_scope,
+    )
+    pos = _resolve_layout(
+        graph_for_edges,
         layout=layout,
         layout_seed=layout_seed,
         treatment_nodes=treatment_nodes,
@@ -473,15 +510,24 @@ def draw_global_network_highlighted(
     linewidths = []
     treatment_set = set(treatment_nodes)
     outcome_set = set(outcome_nodes)
-    metric_values = _resolve_node_metric(global_graph, size_by=size_by)
+    undirected_graph = graph_for_edges.to_undirected()
+    hop1_nodes = set()
+    for biomarker in treatment_set:
+        if biomarker not in undirected_graph:
+            continue
+        hop1_nodes.update(undirected_graph.neighbors(biomarker))
+    hop1_nodes -= treatment_set
+    hop1_nodes -= outcome_set
+
+    metric_values = _resolve_node_metric(graph_for_edges, size_by=size_by)
     size_map = _resolve_node_size_map(
-        global_graph,
+        graph_for_edges,
         size_by=size_by,
         min_node_size=min_node_size,
         max_node_size=max_node_size,
     )
 
-    for node in global_graph.nodes():
+    for node in graph_for_edges.nodes():
         base_size = size_map.get(node)
         if node in outcome_set:
             node_colors.append("skyblue")
@@ -500,7 +546,7 @@ def draw_global_network_highlighted(
             linewidths.append(1.0)
 
     nx.draw_networkx_nodes(
-        global_graph,
+        graph_for_edges,
         pos,
         node_color=node_colors,
         node_size=node_sizes,
@@ -508,7 +554,7 @@ def draw_global_network_highlighted(
         linewidths=linewidths,
     )
     nx.draw_networkx_edges(
-        global_graph,
+        graph_for_edges,
         pos,
         width=edge_width,
         alpha=edge_alpha,
@@ -520,22 +566,28 @@ def draw_global_network_highlighted(
     )
     label_nodes = {}
     if label_scope == "all":
-        label_nodes = {node: node for node in global_graph.nodes()}
+        label_nodes = {node: node for node in graph_for_edges.nodes()}
     elif label_scope == "biomarkers":
         visible = set(treatment_nodes) | set(outcome_nodes)
         if layout == "concentric":
-            visible = set(global_graph.nodes())
-        label_nodes = {node: node for node in global_graph.nodes() if node in visible}
+            visible = set(graph_for_edges.nodes())
+        label_nodes = {node: node for node in graph_for_edges.nodes() if node in visible}
+    elif label_scope == "hop1":
+        label_nodes = {node: node for node in graph_for_edges.nodes() if node in hop1_nodes}
+    elif label_scope == "biomarkers_and_1hop":
+        visible = set(treatment_nodes) | set(outcome_nodes) | hop1_nodes
+        label_nodes = {node: node for node in graph_for_edges.nodes() if node in visible}
     elif label_scope == "none":
         label_nodes = {}
     else:
         raise ValueError(
-            f"Unsupported label_scope '{label_scope}'. Use one of: all, biomarkers, none."
+            "Unsupported label_scope "
+            f"'{label_scope}'. Use one of: all, biomarkers, hop1, biomarkers_and_1hop, none."
         )
 
     if label_nodes:
         nx.draw_networkx_labels(
-            global_graph,
+            graph_for_edges,
             pos,
             labels=label_nodes,
             font_size=10,

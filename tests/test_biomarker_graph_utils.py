@@ -18,6 +18,7 @@ from biomarker.graph_utils import (
     _resolve_legend_path,
     build_biomarker_dag,
     build_biomarker_ego_graph,
+    filter_edges_by_scope,
     filter_isolated_nodes,
     filter_graph_nodes,
     get_global_graph,
@@ -264,3 +265,21 @@ def test_build_biomarker_ego_graph_keeps_only_requested_hop_neighbors():
     assert set(ego_graph.nodes()) == {"B1", "N1", "DISEASE"}
     assert "N2" not in ego_graph
     assert ego_graph.has_edge("B1", "DISEASE")
+
+
+def test_filter_edges_by_scope_keeps_only_biomarker_related_edges():
+    graph = nx.DiGraph()
+    graph.add_edge("B1", "N1")
+    graph.add_edge("N1", "N2")
+    graph.add_edge("B1", "DISEASE")
+
+    filtered = filter_edges_by_scope(
+        graph,
+        treatment_nodes=["B1"],
+        outcome_nodes=["DISEASE"],
+        edge_scope="biomarker",
+    )
+
+    assert ("B1", "N1") in filtered.edges()
+    assert ("B1", "DISEASE") in filtered.edges()
+    assert ("N1", "N2") not in filtered.edges()
