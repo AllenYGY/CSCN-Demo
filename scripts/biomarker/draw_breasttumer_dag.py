@@ -76,6 +76,18 @@ def parse_args():
         help="Optional plot title. Defaults to '<dataset-name> Biomarker DAG'.",
     )
     parser.add_argument(
+        "--layout",
+        choices=("spring", "kamada_kawai", "circular", "concentric", "dag"),
+        default="spring",
+        help="Graph layout for visualization. Default: spring",
+    )
+    parser.add_argument(
+        "--layout-seed",
+        type=int,
+        default=42,
+        help="Random seed used by spring layout.",
+    )
+    parser.add_argument(
         "--size-by",
         choices=("degree", "in_degree", "out_degree"),
         default=None,
@@ -224,6 +236,7 @@ def main() -> None:
     log(dataset_name, f"gene list path: {gene_list_path}")
     log(dataset_name, f"biomarkers path: {biomarkers_path}")
     log(dataset_name, f"output path: {output_path}")
+    log(dataset_name, f"layout: {args.layout}")
     log(dataset_name, f"size by: {args.size_by or 'fixed'}")
 
     if not gene_list_path.is_file():
@@ -256,6 +269,7 @@ def main() -> None:
         highlighted_treatments=biomarkers,
         outcome_node=args.outcome_node,
         candidate_treatments=gene_names,
+        outcome_parent_nodes=biomarkers,
     )
     confounder_count = len({node for nodes in confounders_by_treatment.values() for node in nodes})
     log(
@@ -270,6 +284,8 @@ def main() -> None:
         outcome_nodes=[args.outcome_node],
         save_path=str(output_path),
         title=title,
+        layout=args.layout,
+        layout_seed=args.layout_seed,
         size_by=args.size_by,
         min_node_size=args.min_node_size,
         max_node_size=args.max_node_size,

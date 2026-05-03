@@ -100,11 +100,15 @@ def build_biomarker_dag(
     highlighted_treatments,
     outcome_node="DISEASE",
     candidate_treatments=None,
+    outcome_parent_nodes=None,
     confounder_method="classic",
     connect_treatments_to_outcome=True,
 ):
     candidate_treatments = list(
         candidate_treatments if candidate_treatments is not None else highlighted_treatments
+    )
+    outcome_parent_nodes = list(
+        outcome_parent_nodes if outcome_parent_nodes is not None else highlighted_treatments
     )
     graph_with_outcome = add_sink_node_to_graph(global_graph.copy(), sink_node_name=outcome_node)
     filter_nodes = set(highlighted_treatments)
@@ -126,8 +130,9 @@ def build_biomarker_dag(
     filtered_graph = filter_graph_nodes(global_graph, sorted(filter_nodes))
     filtered_graph.add_node(outcome_node)
     if connect_treatments_to_outcome:
-        for treatment in candidate_treatments:
-            filtered_graph.add_edge(treatment, outcome_node)
+        for treatment in outcome_parent_nodes:
+            if treatment in filtered_graph:
+                filtered_graph.add_edge(treatment, outcome_node)
     return filtered_graph, confounders_by_treatment
 
 
@@ -143,14 +148,66 @@ def _resolve_legend_path(output_path):
     return output_path.with_name(f"{output_path.stem}_legend{output_path.suffix}")
 
 
-def _dag_layout(global_graph):
-    if nx.is_directed_acyclic_graph(global_graph):
+def _resolve_concentric_layout(global_graph, treatment_nodes, outcome_nodes):
+    import math
+
+    outcome_set = set(outcome_nodes)
+    treatment_set = set(treatment_nodes) - outcome_set
+    other_nodes = [
+        node for node in global_graph.nodes() if node not in outcome_set and node not in treatment_set
+    ]
+
+    pos = {}
+    for node in outcome_set:
+        pos[node] = (0.0, 0.0)
+
+    if treatment_set:
+        treatment_nodes_sorted = sorted(treatment_set)
+        radius = 1.4
+        for idx, node in enumerate(treatment_nodes_sorted):
+            angle = 2.0 * math.pi * idx / len(treatment_nodes_sorted)
+            pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
+
+    if other_nodes:
+        other_nodes_sorted = sorted(other_nodes)
+        radius = 3.0
+        for idx, node in enumerate(other_nodes_sorted):
+            angle = 2.0 * math.pi * idx / len(other_nodes_sorted)
+            pos[node] = (radius * math.cos(angle), radius * math.sin(angle))
+
+    return pos
+
+
+def _resolve_layout(
+    global_graph,
+    layout="spring",
+    layout_seed=42,
+    treatment_nodes=None,
+    outcome_nodes=None,
+):
+    if layout == "spring":
+        return nx.spring_layout(global_graph, seed=layout_seed)
+    if layout == "kamada_kawai":
+        return nx.kamada_kawai_layout(global_graph)
+    if layout == "circular":
+        return nx.circular_layout(global_graph)
+    if layout == "concentric":
+        return _resolve_concentric_layout(
+            global_graph,
+            treatment_nodes=treatment_nodes or [],
+            outcome_nodes=outcome_nodes or [],
+        )
+    if layout == "dag":
         layout_graph = global_graph.copy()
-        for layer, nodes in enumerate(nx.topological_generations(global_graph)):
-            for node in nodes:
-                layout_graph.nodes[node]["layer"] = layer
-        return nx.multipartite_layout(layout_graph, subset_key="layer", align="horizontal")
-    return nx.kamada_kawai_layout(global_graph)
+        if nx.is_directed_acyclic_graph(global_graph):
+            for layer, nodes in enumerate(nx.topological_generations(global_graph)):
+                for node in nodes:
+                    layout_graph.nodes[node]["layer"] = layer
+            return nx.multipartite_layout(layout_graph, subset_key="layer", align="horizontal")
+        return nx.kamada_kawai_layout(global_graph)
+    raise ValueError(
+        f"Unsupported layout '{layout}'. Use one of: spring, kamada_kawai, circular, concentric, dag."
+    )
 
 
 def _resolve_node_size_map(
@@ -273,12 +330,20 @@ def draw_global_network_highlighted(
     outcome_nodes,
     save_path="results",
     title="Biomarker DAG",
+    layout="spring",
+    layout_seed=42,
     size_by=None,
     min_node_size=700,
     max_node_size=1400,
 ):
     output_path = _resolve_highlighted_dag_path(save_path)
-    pos = _dag_layout(global_graph)
+    pos = _resolve_layout(
+        global_graph,
+        layout=layout,
+        layout_seed=layout_seed,
+        treatment_nodes=treatment_nodes,
+        outcome_nodes=outcome_nodes,
+    )
     plt.figure(figsize=(14, 10))
 
     node_colors = []
