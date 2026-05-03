@@ -25,6 +25,7 @@ parse_args <- function(args) {
     dataset = "GSE121893",
     data_dir = NULL,
     biomarker_file = NULL,
+    deseq_only_file = NULL,
     used_gene_file = NULL,
     run_name = NULL,
     help = FALSE
@@ -55,6 +56,8 @@ parse_args <- function(args) {
       parsed$data_dir <- value
     } else if (key == "biomarker-file") {
       parsed$biomarker_file <- value
+    } else if (key == "deseq-only-file") {
+      parsed$deseq_only_file <- value
     } else if (key == "used-gene-file") {
       parsed$used_gene_file <- value
     } else if (key == "run-name") {
@@ -78,6 +81,7 @@ print_help <- function() {
       "  --dataset NAME         Dataset key. Default: GSE121893",
       "  --data-dir PATH        Dataset directory. Default: <repo>/data/<dataset>",
       "  --biomarker-file PATH  Optional explicit biomarker CSV path",
+      "  --deseq-only-file PATH Optional explicit DESeq2-only gene CSV path",
       "  --used-gene-file PATH  Optional explicit top-genes-used CSV path",
       "  --run-name NAME        Output prefix. Default: dataset-specific preset",
       "  --help                 Show this message",
@@ -160,6 +164,11 @@ used_gene_file_path <- if (is.null(args$used_gene_file) || identical(args$used_g
 } else {
   args$used_gene_file
 }
+deseq_only_file_path <- if (is.null(args$deseq_only_file) || identical(args$deseq_only_file, "")) {
+  NULL
+} else {
+  args$deseq_only_file
+}
 
 # ========= 2. 安装 & 加载 R 包 =========
 required_bioc_packages <- c(
@@ -225,11 +234,20 @@ read_gene_column <- function(csv_path) {
 }
 
 biomarker_genes <- read_gene_column(biomarker_file_path)
-used_genes <- read_gene_column(used_gene_file_path)
-deseq_only_genes <- used_genes[!used_genes %in% biomarker_genes]
+used_genes <- character(0)
+if (is.null(deseq_only_file_path)) {
+  used_genes <- read_gene_column(used_gene_file_path)
+  deseq_only_genes <- used_genes[!used_genes %in% biomarker_genes]
+} else {
+  deseq_only_genes <- read_gene_column(deseq_only_file_path)
+}
 
 message(paste("✅ Biomarker 基因数:", length(biomarker_genes)))
-message(paste("✅ CSCN 实际使用 top 基因数:", length(used_genes)))
+if (length(used_genes) > 0) {
+  message(paste("✅ CSCN 实际使用 top 基因数:", length(used_genes)))
+} else {
+  message("✅ CSCN 实际使用 top 基因数: skipped (direct DESeq2-only input mode)")
+}
 message(paste("✅ DESeq2_only 基因数:", length(deseq_only_genes)))
 message(paste("✅ dataset:", dataset_name))
 message(paste("✅ run name:", run_name))

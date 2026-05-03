@@ -32,15 +32,15 @@ From strongest biological consistency to weakest:
 
 ## Dataset Summary Table
 
-| Dataset | Disease / cancer | Comparison | Representative biomarkers | Main enrichment signal | Assessment | Sample Size (Cells) | Gene Size |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `GSE159115` | clear cell renal cell carcinoma | `ccRCC tumor` vs `PT-B/PT-C normal` | `CD68`, `TM4SF18`, `DCDC2`, `SLC25A25`, `CRACR2B`, `PFKL` | `glycolysis`, `pyruvate metabolism`, `HIF-1`, `carbon metabolism`, `PPP` | Strong match | `100 / 100` | 150|
-| `GSE138852` | Alzheimer's disease | `AD` vs `ct` | `GPM6A`, `NTRK2`, `CTNNA2`, `SLC1A2`, `GPC5`, `NRXN1`, `SPP1` | `synapse organization`, `synapse structure/activity`, `axonogenesis`, `neuron migration` | Strong match | `3000 / 3000` |150|
-| `SCP259` | ulcerative colitis | `Inflamed crypt/proliferative epithelial` vs `Healthy crypt/proliferative epithelial` | `TFF1`, `S100P`, `PLA2G2A`, `PI3`, `LYZ`, `REG4`, `PDIA3`, `CEACAM5` | biomarker: `peptidase inhibitor activity`, `secretory granule lumen`, `MHC assembly`, `sulfur metabolism`; DESeq2-only: `fatty acid oxidation`, `acute inflammatory response` | Strong match | `4000 / 4000` | 150 |
-| `GSE132465` | colorectal cancer | `tumor epithelial` vs `normal epithelial` | `CLCA4`, `ZG16`, `PHGR1`, `GUCA2A`, `GUCA2B`, `CA7`, `ITLN1`, `MS4A12`, `LYPD8` | `chloride transport`, `nitrogen metabolism`, `mineral absorption`, metal-ion/homeostasis terms | Good match, but mainly normal epithelial program | `1000 / 1000` |150|
-| `GSE131907` | lung cancer | `normal lung epithelial` vs `tumor malignant epithelial` | `ABCC3`, `LINC00152`, `CRABP2`, `CEACAM5`, `PMEPA1`, `ALDH1A1`, `PVRL4`, `FAM83A` | weak GO; `PPAR signaling` in DESeq2-only set | Moderate match | `2000 / 2000` |150|
-| `GSE121893` | dilated heart failure | `dHF` vs `N` | `RGS5`, `VWF`, `IFIT3`, `ITLN1`, `MTRNR2L13` | `apoptosis`, `complement/coagulation`, `platelet activation`, `ECM/focal adhesion` | Partial match, noisy | `500 / 500` |150|
-| `GSE115978` | melanoma | `malignant treatment-naive` vs `post-treatment` | `ANO1`, `GZMM`, `SOX11`, `NEFL`, `NEFM`, `CHRNA1` | only `neurofilament` and `postsynaptic cytoskeleton` | Weak match | `800 / 800` |150|
+| Dataset | Disease / cancer | Comparison | Representative biomarkers | Biomarker count | Main enrichment signal | Assessment | Sample Size (Cells) | Gene Size |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `GSE159115` | clear cell renal cell carcinoma | `ccRCC tumor` vs `PT-B/PT-C normal` | `CD68`, `TM4SF18`, `DCDC2`, `SLC25A25`, `CRACR2B`, `PFKL` | `6` | `glycolysis`, `pyruvate metabolism`, `HIF-1`, `carbon metabolism`, `PPP` | Strong match | `100 / 100` | `150` |
+| `GSE138852` | Alzheimer's disease | `AD` vs `ct` | `GPM6A`, `NTRK2`, `CTNNA2`, `SLC1A2`, `GPC5`, `NRXN1`, `SPP1` | `7` | `synapse organization`, `synapse structure/activity`, `axonogenesis`, `neuron migration` | Strong match | `3000 / 3000` | `150` |
+| `SCP259` | ulcerative colitis | `Inflamed crypt/proliferative epithelial` vs `Healthy crypt/proliferative epithelial` | `TFF1`, `S100P`, `PLA2G2A`, `PI3`, `LYZ`, `REG4`, `PDIA3`, `CEACAM5` | `24` | biomarker: `peptidase inhibitor activity`, `secretory granule lumen`, `MHC assembly`, `sulfur metabolism`; DESeq2-only: `fatty acid oxidation`, `acute inflammatory response` | Strong match | `4000 / 4000` | `150` |
+| `GSE132465` | colorectal cancer | `tumor epithelial` vs `normal epithelial` | `CLCA4`, `ZG16`, `PHGR1`, `GUCA2A`, `GUCA2B`, `CA7`, `ITLN1`, `MS4A12`, `LYPD8` | `20` | `chloride transport`, `nitrogen metabolism`, `mineral absorption`, metal-ion/homeostasis terms | Good match, but mainly normal epithelial program | `1000 / 1000` | `150` |
+| `GSE131907` | lung cancer | `normal lung epithelial` vs `tumor malignant epithelial` | `ABCC3`, `LINC00152`, `CRABP2`, `CEACAM5`, `PMEPA1`, `ALDH1A1`, `PVRL4`, `FAM83A` | `70` | weak GO; `PPAR signaling` in DESeq2-only set | Moderate match | `2000 / 2000` | `150` |
+| `GSE121893` | dilated heart failure | `dHF` vs `N` | `RGS5`, `VWF`, `IFIT3`, `ITLN1`, `MTRNR2L13` | `22`  | `apoptosis`, `complement/coagulation`, `platelet activation`, `ECM/focal adhesion` | Partial match, noisy | `500 / 500` | `150` |
+| `GSE115978` | melanoma | `malignant treatment-naive` vs `post-treatment` | `ANO1`, `GZMM`, `SOX11`, `NEFL`, `NEFM`, `CHRNA1` | `46` | only `neurofilament` and `postsynaptic cytoskeleton` | Weak match | `800 / 800` | `150` |
 
 ## Per-Dataset Notes
 
