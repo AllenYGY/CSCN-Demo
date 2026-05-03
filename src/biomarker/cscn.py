@@ -32,6 +32,10 @@ logging.getLogger("pgmpy").setLevel(logging.WARNING)
 
 
 _PICKLE_CLASS_ALIASES = {
+    ("__main__", "CSCN"): ("biomarker.cscn", "CSCN"),
+    ("__main__", "KDT"): ("biomarker.kdt", "KDT"),
+    ("__main__", "KDT_Node"): ("biomarker.kdt", "KDT_Node"),
+    ("__main__", "qnth_element"): ("biomarker.kdt", "qnth_element"),
     ("Biomarker_BreastTumer", "CSCN"): ("biomarker.cscn", "CSCN"),
     ("Biomarker_BreastTumer", "KDT"): ("biomarker.kdt", "KDT"),
     ("Biomarker_BreastTumer", "KDT_Node"): ("biomarker.kdt", "KDT_Node"),
