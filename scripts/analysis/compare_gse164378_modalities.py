@@ -26,7 +26,6 @@ from scripts.analysis.compare_ckm_clustering import (
     _log,
     _plot_embedding,
     analyze_representation,
-    build_expression_df,
 )
 
 
@@ -103,6 +102,30 @@ def _load_or_compute_ckm(
     return pd.DataFrame(ckm, index=cells, columns=gene_names)
 
 
+def _load_expression_subset(
+    expr_path: Path,
+    gene_names: list[str],
+    cell_ids: list[str],
+) -> pd.DataFrame:
+    expr = pd.read_csv(expr_path)
+    if "cell_id" not in expr.columns:
+        raise ValueError("Expression baseline requires a `cell_id` column.")
+    expr["cell_id"] = expr["cell_id"].astype(str)
+    expr = expr.set_index("cell_id")
+
+    missing_genes = [gene for gene in gene_names if gene not in expr.columns]
+    if missing_genes:
+        raise ValueError(f"Expression baseline is missing run genes: {missing_genes[:10]}")
+
+    missing_cells = [cell_id for cell_id in cell_ids if cell_id not in expr.index]
+    if missing_cells:
+        raise ValueError(
+            f"Expression baseline is missing shared cells: {missing_cells[:10]}"
+        )
+
+    return expr.loc[cell_ids, gene_names].astype(float).copy()
+
+
 def run_analysis(
     *,
     rna_expr_path: Path,
@@ -138,13 +161,11 @@ def run_analysis(
     truth_labels = metadata[label_column].astype(str)
 
     rna_gene_names = _load_gene_names(rna_run_dir)
-    expr_rna = build_expression_df(
+    expr_rna = _load_expression_subset(
         rna_expr_path,
-        canonical_metadata,
         rna_gene_names,
-        expr_orientation="cells_by_genes",
-        cell_id_column="cell_id",
-    ).loc[common_cell_ids]
+        common_cell_ids,
+    )
 
     ckm_rna = _load_or_compute_ckm(
         rna_run_dir,
