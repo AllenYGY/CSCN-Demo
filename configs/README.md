@@ -26,11 +26,16 @@ python3 scripts/prep/prepare_GSE164378.py
 - `gse164378_3p_rna_adt_joint_expression.csv.gz`
 - `gse164378_3p_metadata.csv.gz`
 
-当前 `GSE164378` 配置默认采用：
+当前 `GSE164378` 预处理会额外生成一套固定 shared-cell 子集：
+
+- 总细胞数：`2000`
+- 分层字段：`celltype.l1`
+- 当前默认分配：8 个 `celltype.l1` 大类各 `250`
+
+当前三份 `GSE164378` config 默认直接使用这套 fixed shared-cell 输入：
 
 - 单个 CSCN 运行组：`all`
-- 采样策略：按 `celltype.l1` 分层采样
-- 每个 `celltype.l1` 抽样 `1000` 个细胞
+- 不再在 `prepare` 阶段二次随机采样
 
 ## Run
 

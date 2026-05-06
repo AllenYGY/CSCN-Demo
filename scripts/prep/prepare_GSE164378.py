@@ -30,6 +30,9 @@ JOINT_RNA_TOP_N = 100
 JOINT_ADT_TOP_N = 50
 RNA_TARGET_SUM = 1e6
 CHUNK_ROWS = 2_000_000
+SHARED_TOTAL_CELLS = 2000
+SHARED_STRATIFY_KEY = "celltype.l1"
+SHARED_RANDOM_SEED = 42
 
 
 def log(message: str) -> None:
@@ -126,6 +129,54 @@ def write_expression_table(
 def write_text_lines(path: Path, values: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(values) + "\n", encoding="utf-8")
+
+
+def sample_shared_cells(
+    metadata_header: list[str],
+    metadata_rows: list[list[str]],
+    *,
+    total_cells: int = SHARED_TOTAL_CELLS,
+    stratify_key: str = SHARED_STRATIFY_KEY,
+    random_seed: int = SHARED_RANDOM_SEED,
+) -> tuple[list[str], list[list[str]], dict[str, int]]:
+    metadata = pd.DataFrame(metadata_rows, columns=metadata_header)
+    if "cell_id" not in metadata.columns:
+        raise ValueError("Metadata must contain a `cell_id` column.")
+    if stratify_key not in metadata.columns:
+        raise ValueError(f"Metadata is missing stratification column: {stratify_key}")
+
+    metadata["cell_id"] = metadata["cell_id"].astype(str)
+    grouped = list(metadata.groupby(stratify_key, sort=False))
+    if not grouped:
+        raise ValueError("No strata available for shared-cell sampling.")
+    if total_cells < len(grouped):
+        raise ValueError(
+            f"Requested total_cells={total_cells} is smaller than the number of strata={len(grouped)}."
+        )
+
+    base = total_cells // len(grouped)
+    remainder = total_cells % len(grouped)
+    rng = np.random.default_rng(random_seed)
+
+    sampled_frames: list[pd.DataFrame] = []
+    per_stratum_counts: dict[str, int] = {}
+    for idx, (label, frame) in enumerate(grouped):
+        target_n = base + (1 if idx < remainder else 0)
+        if len(frame) < target_n:
+            raise ValueError(
+                f"Stratum {label} has only {len(frame)} cells, fewer than requested {target_n}."
+            )
+        sampled_positions = np.sort(
+            rng.choice(len(frame), size=target_n, replace=False)
+        )
+        sampled_frame = frame.iloc[sampled_positions].copy()
+        sampled_frames.append(sampled_frame)
+        per_stratum_counts[str(label)] = int(target_n)
+
+    sampled = pd.concat(sampled_frames, axis=0)
+    sampled_cell_ids = sampled["cell_id"].astype(str).tolist()
+    sampled_rows = sampled.astype(str).values.tolist()
+    return sampled_cell_ids, sampled_rows, per_stratum_counts
 
 
 def extract_member_if_missing(tar_path: Path, member_name: str, output_path: Path) -> None:
@@ -386,6 +437,61 @@ def main() -> None:
         adt_top150_names[:joint_adt_count],
     )
 
+    log("building fixed shared-cell subset for fair modality comparison")
+    shared_cell_ids, shared_metadata_rows, shared_strata_counts = sample_shared_cells(
+        metadata_header,
+        metadata_rows,
+    )
+    shared_index = {cell_id: idx for idx, cell_id in enumerate(rna_barcodes)}
+    shared_positions = np.asarray(
+        [shared_index[cell_id] for cell_id in shared_cell_ids],
+        dtype=np.int64,
+    )
+    shared_prefix = f"gse164378_3p_shared{SHARED_TOTAL_CELLS}"
+
+    shared_metadata_output = output_dir / f"{shared_prefix}_metadata.csv.gz"
+    shared_cells_output = output_dir / f"{shared_prefix}_cells.txt"
+    shared_rna_output = output_dir / f"{shared_prefix}_rna_only_expression.csv.gz"
+    shared_adt_output = output_dir / f"{shared_prefix}_adt_only_expression.csv.gz"
+    shared_joint_output = output_dir / f"{shared_prefix}_rna_adt_joint_expression.csv.gz"
+
+    write_gzip_csv(shared_metadata_output, metadata_header, shared_metadata_rows)
+    write_text_lines(shared_cells_output, shared_cell_ids)
+    write_expression_table(
+        shared_rna_output,
+        shared_cell_ids,
+        rna_top150_names,
+        rna_top150_expr[shared_positions],
+    )
+    write_expression_table(
+        shared_adt_output,
+        shared_cell_ids,
+        adt_top150_names,
+        adt_top150_expr[shared_positions],
+    )
+    write_expression_table(
+        shared_joint_output,
+        shared_cell_ids,
+        joint_feature_names,
+        joint_expr[shared_positions],
+    )
+    write_text_lines(
+        output_dir / f"{shared_prefix}_rna_only_features.txt",
+        rna_top150_names,
+    )
+    write_text_lines(
+        output_dir / f"{shared_prefix}_adt_only_features.txt",
+        adt_top150_names,
+    )
+    write_text_lines(
+        output_dir / f"{shared_prefix}_joint_rna_features.txt",
+        rna_top150_names[:joint_rna_count],
+    )
+    write_text_lines(
+        output_dir / f"{shared_prefix}_joint_adt_features.txt",
+        adt_top150_names[:joint_adt_count],
+    )
+
     summary = {
         "dataset": DATA_SET,
         "mode": "3P",
@@ -403,6 +509,19 @@ def main() -> None:
             "rna_only_expression": str(rna_output),
             "adt_only_expression": str(adt_output),
             "joint_expression": str(joint_output),
+        },
+        "shared_subset": {
+            "total_cells": len(shared_cell_ids),
+            "stratify_key": SHARED_STRATIFY_KEY,
+            "random_seed": SHARED_RANDOM_SEED,
+            "per_stratum_counts": shared_strata_counts,
+            "outputs": {
+                "metadata": str(shared_metadata_output),
+                "cells": str(shared_cells_output),
+                "rna_only_expression": str(shared_rna_output),
+                "adt_only_expression": str(shared_adt_output),
+                "joint_expression": str(shared_joint_output),
+            },
         },
     }
     (output_dir / "gse164378_3p_cscn_input_summary.json").write_text(

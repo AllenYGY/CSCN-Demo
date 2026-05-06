@@ -235,27 +235,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rna-expr-path",
         type=Path,
-        default=REPO_ROOT / "data" / "GSE164378" / "cscn_inputs" / "gse164378_3p_rna_only_expression.csv.gz",
+        default=REPO_ROOT / "data" / "GSE164378" / "cscn_inputs" / "gse164378_3p_shared2000_rna_only_expression.csv.gz",
     )
     parser.add_argument(
         "--rna-run-dir",
         type=Path,
-        default=REPO_ROOT / "runs" / "gse164378_3p_rna_only",
+        default=REPO_ROOT / "runs" / "gse164378_3p_shared2000_rna_only",
     )
     parser.add_argument(
         "--adt-run-dir",
         type=Path,
-        default=REPO_ROOT / "runs" / "gse164378_3p_adt_only",
+        default=REPO_ROOT / "runs" / "gse164378_3p_shared2000_adt_only",
     )
     parser.add_argument(
         "--joint-run-dir",
         type=Path,
-        default=REPO_ROOT / "runs" / "gse164378_3p_rna_adt_joint",
+        default=REPO_ROOT / "runs" / "gse164378_3p_shared2000_rna_adt_joint",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=REPO_ROOT / "results" / "gse164378_modality_clustering",
+        default=REPO_ROOT / "results" / "gse164378_modality_clustering_shared2000",
     )
     parser.add_argument("--label-column", default="celltype.l1")
     parser.add_argument("--group-key", default="all")

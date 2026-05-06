@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from scripts.analysis.compare_gse164378_modalities import run_analysis
+from scripts.prep.prepare_GSE164378 import sample_shared_cells
 from tests.support.fake_graph import FakeGraph
 
 
@@ -125,3 +126,38 @@ def test_compare_gse164378_modalities_drops_missing_joint_dag_and_writes_metrics
     assert metrics["n_cells"].tolist() == [3, 3, 3, 3]
     assert shared["cell_id"].tolist() == ["c1", "c2", "c3"]
     assert assignments["cell_id"].tolist() == ["c1", "c2", "c3"]
+
+
+def test_sample_shared_cells_stratifies_evenly_and_is_deterministic():
+    header = ["cell_id", "celltype.l1", "dummy"]
+    rows: list[list[str]] = []
+    for label in ["A", "B", "C", "D"]:
+        for idx in range(10):
+            rows.append([f"{label}_{idx}", label, "x"])
+
+    sampled_ids, sampled_rows, counts = sample_shared_cells(
+        header,
+        rows,
+        total_cells=8,
+        stratify_key="celltype.l1",
+        random_seed=7,
+    )
+
+    assert len(sampled_ids) == 8
+    assert len(sampled_rows) == 8
+    assert counts == {"A": 2, "B": 2, "C": 2, "D": 2}
+    sampled_labels = [row[1] for row in sampled_rows]
+    assert sampled_labels.count("A") == 2
+    assert sampled_labels.count("B") == 2
+    assert sampled_labels.count("C") == 2
+    assert sampled_labels.count("D") == 2
+
+    sampled_ids_repeat, _, counts_repeat = sample_shared_cells(
+        header,
+        rows,
+        total_cells=8,
+        stratify_key="celltype.l1",
+        random_seed=7,
+    )
+    assert sampled_ids_repeat == sampled_ids
+    assert counts_repeat == counts
