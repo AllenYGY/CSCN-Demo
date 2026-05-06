@@ -57,15 +57,17 @@ def _available_dag_ids(run_dir: Path, group_key: str) -> set[int]:
     }
 
 
-def _ensure_same_cell_order(run_dirs: list[Path], group_key: str) -> list[str]:
-    base_cells = _load_group_cells(run_dirs[0], group_key)
-    for run_dir in run_dirs[1:]:
-        cells = _load_group_cells(run_dir, group_key)
-        if cells != base_cells:
-            raise ValueError(
-                f"Run {run_dir} does not share the same sampled cell order as {run_dirs[0]}."
-            )
-    return base_cells
+def _available_cell_ids_by_run(run_dir: Path, group_key: str) -> tuple[list[str], dict[str, int]]:
+    cells = _load_group_cells(run_dir, group_key)
+    available_ids = _available_dag_ids(run_dir, group_key)
+    available_pairs = [
+        (cell_id, dag_idx)
+        for dag_idx, cell_id in enumerate(cells)
+        if dag_idx in available_ids
+    ]
+    ordered_cell_ids = [cell_id for cell_id, _ in available_pairs]
+    dag_index_by_cell = {cell_id: dag_idx for cell_id, dag_idx in available_pairs}
+    return ordered_cell_ids, dag_index_by_cell
 
 
 def _load_or_compute_ckm(
@@ -118,20 +120,20 @@ def run_analysis(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_dirs = [rna_run_dir, adt_run_dir, joint_run_dir]
-    canonical_cells = _ensure_same_cell_order(run_dirs, group_key)
     canonical_metadata = _load_run_metadata(rna_run_dir)
 
     if label_column not in canonical_metadata.columns:
         raise ValueError(f"Missing label column `{label_column}` in {rna_run_dir}/inputs/cell_metadata.csv")
 
-    common_dag_ids = set(range(len(canonical_cells)))
-    for run_dir in run_dirs:
-        common_dag_ids &= _available_dag_ids(run_dir, group_key)
-    common_dag_ids = sorted(common_dag_ids)
-    if not common_dag_ids:
-        raise ValueError("No shared DAG ids across the provided runs.")
+    rna_cell_ids, rna_dag_by_cell = _available_cell_ids_by_run(rna_run_dir, group_key)
+    adt_cell_ids, adt_dag_by_cell = _available_cell_ids_by_run(adt_run_dir, group_key)
+    joint_cell_ids, joint_dag_by_cell = _available_cell_ids_by_run(joint_run_dir, group_key)
 
-    common_cell_ids = [canonical_cells[idx] for idx in common_dag_ids]
+    shared_cell_ids = set(rna_cell_ids) & set(adt_cell_ids) & set(joint_cell_ids)
+    if not shared_cell_ids:
+        raise ValueError("No shared cell ids across the provided runs.")
+
+    common_cell_ids = [cell_id for cell_id in rna_cell_ids if cell_id in shared_cell_ids]
     metadata = canonical_metadata.loc[common_cell_ids].copy()
     truth_labels = metadata[label_column].astype(str)
 
@@ -197,7 +199,9 @@ def run_analysis(
     pd.DataFrame(
         {
             "cell_id": common_cell_ids,
-            "dag_index": common_dag_ids,
+            "rna_dag_index": [rna_dag_by_cell[cell_id] for cell_id in common_cell_ids],
+            "adt_dag_index": [adt_dag_by_cell[cell_id] for cell_id in common_cell_ids],
+            "joint_dag_index": [joint_dag_by_cell[cell_id] for cell_id in common_cell_ids],
         }
     ).to_csv(output_dir / "shared_cells.csv", index=False)
     _log(f"saved GSE164378 modality comparison outputs to {output_dir}")
