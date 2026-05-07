@@ -51,4 +51,6 @@ docs/response/
 docs/reviewer_response_gse121893.md
 docs/reviewer_response_gse138852.md
 
+config/*
+
 .mplcache/*

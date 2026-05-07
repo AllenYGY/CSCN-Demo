@@ -42,7 +42,7 @@ from gse174367_utils import (
 
 
 DEFAULT_RANDOM_SEED = 42
-DEFAULT_MAX_WORKERS = min(8, os.cpu_count() or 1)
+DEFAULT_MAX_WORKERS = min(120, os.cpu_count() or 1)
 DEFAULT_USE_BITMAP = True
 
 

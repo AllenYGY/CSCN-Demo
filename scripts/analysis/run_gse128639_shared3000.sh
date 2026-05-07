@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /Users/allenygy/Research/CSCN
+cd /home/jovyan/work/CSCN
 
 export PYTHONPATH="$PWD/src"
 export MPLCONFIGDIR="$PWD/.mplcache"
 mkdir -p "$MPLCONFIGDIR"
 
 echo "[1/4] prepare GSE128639 MNC inputs (including shared3000 subset)"
-./.venv/bin/python scripts/prep/prepare_GSE128639.py
+python scripts/prep/prepare_GSE128639.py
 
 echo "[2/4] run shared3000 CSCN cases in parallel"
-./.venv/bin/python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_rna_only.yaml \
+python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_rna_only.yaml \
   > gse128639_shared3000_rna_only.log 2>&1 &
 PID_RNA=$!
 
-./.venv/bin/python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_adt_only.yaml \
+python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_adt_only.yaml \
   > gse128639_shared3000_adt_only.log 2>&1 &
 PID_ADT=$!
 
-./.venv/bin/python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_rna_adt_joint.yaml \
+python -c "from cscn.cli import main; raise SystemExit(main())" run-all --config configs/GSE128639/shared3000_rna_adt_joint.yaml \
   > gse128639_shared3000_rna_adt_joint.log 2>&1 &
 PID_JOINT=$!
 
@@ -43,7 +43,7 @@ if [[ "$FAIL" -ne 0 ]]; then
 fi
 
 echo "[3/4] run modality clustering comparison"
-./.venv/bin/python scripts/analysis/compare_gse128639_modalities.py --umap
+python scripts/analysis/compare_gse128639_modalities.py --umap
 
 echo "[4/4] finished all GSE128639 shared3000 cases"
 echo
