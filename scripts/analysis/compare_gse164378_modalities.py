@@ -126,9 +126,30 @@ def _load_expression_subset(
     return expr.loc[cell_ids, gene_names].astype(float).copy()
 
 
+def _load_full_expression_subset(
+    expr_path: Path,
+    cell_ids: list[str],
+) -> pd.DataFrame:
+    expr = pd.read_csv(expr_path)
+    if "cell_id" not in expr.columns:
+        raise ValueError("Expression baseline requires a `cell_id` column.")
+    expr["cell_id"] = expr["cell_id"].astype(str)
+    expr = expr.set_index("cell_id")
+
+    missing_cells = [cell_id for cell_id in cell_ids if cell_id not in expr.index]
+    if missing_cells:
+        raise ValueError(
+            f"Expression baseline is missing shared cells: {missing_cells[:10]}"
+        )
+
+    return expr.loc[cell_ids].astype(float).copy()
+
+
 def run_analysis(
     *,
     rna_expr_path: Path,
+    adt_expr_path: Path,
+    joint_expr_path: Path,
     rna_run_dir: Path,
     adt_run_dir: Path,
     joint_run_dir: Path,
@@ -166,6 +187,14 @@ def run_analysis(
         rna_gene_names,
         common_cell_ids,
     )
+    expr_adt = _load_full_expression_subset(
+        adt_expr_path,
+        common_cell_ids,
+    )
+    expr_joint = _load_full_expression_subset(
+        joint_expr_path,
+        common_cell_ids,
+    )
 
     ckm_rna = _load_or_compute_ckm(
         rna_run_dir,
@@ -188,6 +217,8 @@ def run_analysis(
 
     representations = {
         "expr_rna": expr_rna,
+        "expr_adt": expr_adt,
+        "expr_joint": expr_joint,
         "ckm_rna": ckm_rna,
         "ckm_adt": ckm_adt,
         "ckm_joint": ckm_joint,
@@ -238,6 +269,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=REPO_ROOT / "data" / "GSE164378" / "cscn_inputs" / "gse164378_3p_shared2000_rna_only_expression.csv.gz",
     )
     parser.add_argument(
+        "--adt-expr-path",
+        type=Path,
+        default=REPO_ROOT / "data" / "GSE164378" / "cscn_inputs" / "gse164378_3p_shared2000_adt_only_expression.csv.gz",
+    )
+    parser.add_argument(
+        "--joint-expr-path",
+        type=Path,
+        default=REPO_ROOT / "data" / "GSE164378" / "cscn_inputs" / "gse164378_3p_shared2000_rna_adt_joint_expression.csv.gz",
+    )
+    parser.add_argument(
         "--rna-run-dir",
         type=Path,
         default=REPO_ROOT / "runs" / "gse164378_3p_shared2000_rna_only",
@@ -275,6 +316,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     run_analysis(
         rna_expr_path=args.rna_expr_path,
+        adt_expr_path=args.adt_expr_path,
+        joint_expr_path=args.joint_expr_path,
         rna_run_dir=args.rna_run_dir,
         adt_run_dir=args.adt_run_dir,
         joint_run_dir=args.joint_run_dir,

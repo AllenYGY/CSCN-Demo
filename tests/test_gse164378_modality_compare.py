@@ -71,6 +71,8 @@ def _make_run_dir(base: Path, name: str, genes: list[str], ckm: np.ndarray, miss
 
 def test_compare_gse164378_modalities_drops_missing_joint_dag_and_writes_metrics(tmp_path):
     expr_path = tmp_path / "rna_expr.csv"
+    adt_expr_path = tmp_path / "adt_expr.csv"
+    joint_expr_path = tmp_path / "joint_expr.csv"
     _write_csv(
         expr_path,
         ["cell_id", "G1", "G2"],
@@ -79,6 +81,26 @@ def test_compare_gse164378_modalities_drops_missing_joint_dag_and_writes_metrics
             ["c2", 0.2, 0.0],
             ["c3", 5.0, 5.1],
             ["c4", 5.2, 5.0],
+        ],
+    )
+    _write_csv(
+        adt_expr_path,
+        ["cell_id", "ADT_A", "ADT_B"],
+        [
+            ["c1", 0.1, 0.0],
+            ["c2", 0.2, 0.1],
+            ["c3", 4.9, 5.0],
+            ["c4", 5.1, 4.9],
+        ],
+    )
+    _write_csv(
+        joint_expr_path,
+        ["cell_id", "G1", "ADT_A"],
+        [
+            ["c1", 0.0, 0.1],
+            ["c2", 0.1, 0.2],
+            ["c3", 5.0, 5.0],
+            ["c4", 5.2, 5.1],
         ],
     )
 
@@ -105,6 +127,8 @@ def test_compare_gse164378_modalities_drops_missing_joint_dag_and_writes_metrics
     output_dir = tmp_path / "analysis"
     run_analysis(
         rna_expr_path=expr_path,
+        adt_expr_path=adt_expr_path,
+        joint_expr_path=joint_expr_path,
         rna_run_dir=rna_run,
         adt_run_dir=adt_run,
         joint_run_dir=joint_run,
@@ -119,11 +143,13 @@ def test_compare_gse164378_modalities_drops_missing_joint_dag_and_writes_metrics
 
     assert metrics["representation"].tolist() == [
         "expr_rna",
+        "expr_adt",
+        "expr_joint",
         "ckm_rna",
         "ckm_adt",
         "ckm_joint",
     ]
-    assert metrics["n_cells"].tolist() == [3, 3, 3, 3]
+    assert metrics["n_cells"].tolist() == [3, 3, 3, 3, 3, 3]
     assert shared["cell_id"].tolist() == ["c1", "c2", "c3"]
     assert assignments["cell_id"].tolist() == ["c1", "c2", "c3"]
 
