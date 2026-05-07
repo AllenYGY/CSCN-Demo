@@ -1,0 +1,38 @@
+run_name: gse128639_mnc_rna_adt_joint
+
+input:
+  format: tables
+  expr_path: ../../data/GSE128639/cscn_inputs/gse128639_mnc_rna_adt_joint_expression.tsv.gz
+  metadata_path: ../../data/GSE128639/cscn_inputs/gse128639_mnc_metadata.csv.gz
+  expr_orientation: genes_by_cells
+  gene_key: feature_name
+  metadata_cell_id_column: cell_id
+
+preprocess:
+  normalize: false
+  log1p: false
+  sample_per_group: null
+  random_seed: 42
+  gene_selection:
+    top_n: 150
+
+run:
+  output_dir: ../../runs
+  max_workers: 120
+  sigmoid_score: 0.1
+  significance_level: 0.05
+  max_cond_vars: 20
+  use_bitmap: true
+
+aggregate:
+  consensus: true
+  consensus_threshold_mode: auto
+
+biomarker:
+  enabled: false
+
+viewer:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  reload: false

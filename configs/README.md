@@ -6,10 +6,44 @@
 
 - `GSE121893/config.yaml`
 - `GSE138852/config.yaml`
+- `GSE128639/rna_only.yaml`
+- `GSE128639/adt_only.yaml`
+- `GSE128639/rna_adt_joint.yaml`
+- `GSE128639/shared3000_rna_only.yaml`
+- `GSE128639/shared3000_adt_only.yaml`
+- `GSE128639/shared3000_rna_adt_joint.yaml`
 - `GSE164378/rna_only.yaml`
 - `GSE164378/adt_only.yaml`
 - `GSE164378/rna_adt_joint.yaml`
 - `SCP2046/sham1_full_adaptive_block_prior.yaml`
+
+## GSE128639 Preparation
+
+`GSE128639` 需要先把 GEO `MNC` 原始矩阵整理成 CSCN 可直接读取的精选输入表：
+
+```bash
+python3 scripts/prep/prepare_GSE128639.py
+```
+
+默认会在 `data/GSE128639/cscn_inputs/` 生成：
+
+- `gse128639_mnc_metadata.csv.gz`
+- `gse128639_mnc_rna_only_expression.tsv.gz`
+- `gse128639_mnc_adt_only_expression.tsv.gz`
+- `gse128639_mnc_rna_adt_joint_expression.tsv.gz`
+
+同时会额外生成一套固定 `shared3000` 子集：
+
+- 总细胞数：`3000`
+- 分层字段：`hto_best_label`
+- 随机种子：`42`
+- 代表文件：
+  - `gse128639_mnc_shared3000_metadata.csv.gz`
+  - `gse128639_mnc_shared3000_rna_only_expression.tsv.gz`
+  - `gse128639_mnc_shared3000_adt_only_expression.tsv.gz`
+  - `gse128639_mnc_shared3000_rna_adt_joint_expression.tsv.gz`
+
+当前 `GSE128639` 输出使用统一标准化后的 cell id（将 RNA/ADT 中的 `.1` 后缀转换为 `-1`），并附带基于 HTO 原始计数的最小 metadata 摘要字段。
 
 ## GSE164378 Preparation
 
