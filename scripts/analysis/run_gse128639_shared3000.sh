@@ -42,6 +42,9 @@ if [[ "$FAIL" -ne 0 ]]; then
   exit 1
 fi
 
+echo "[3/4] run modality clustering comparison"
+./.venv/bin/python scripts/analysis/compare_gse128639_modalities.py --umap
+
 echo "[4/4] finished all GSE128639 shared3000 cases"
 echo
 echo "Done. Results:"
@@ -49,10 +52,17 @@ echo "  CSCN runs:"
 echo "    runs/gse128639_mnc_shared3000_rna_only"
 echo "    runs/gse128639_mnc_shared3000_adt_only"
 echo "    runs/gse128639_mnc_shared3000_rna_adt_joint"
+echo "  Clustering comparison:"
+echo "    results/gse128639_modality_clustering_shared3000"
 echo
 echo "Shared subset inputs:"
 echo "  data/GSE128639/cscn_inputs/gse128639_mnc_shared3000_metadata.csv.gz"
 echo "  data/GSE128639/cscn_inputs/gse128639_mnc_shared3000_cells.txt"
+echo
+echo "Key files:"
+echo "  results/gse128639_modality_clustering_shared3000/clustering_metrics.csv"
+echo "  results/gse128639_modality_clustering_shared3000/cell_assignments.csv"
+echo "  results/gse128639_modality_clustering_shared3000/shared_cells.csv"
 echo
 echo "Per-case logs:"
 echo "  gse128639_shared3000_rna_only.log"
